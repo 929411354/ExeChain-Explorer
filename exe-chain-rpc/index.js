@@ -1,7 +1,6 @@
 // Exe Chain RPC Worker - Deterministic blockchain simulation on Cloudflare Edge
 const CHAIN_ID = 8848;
-const GENESIS_TIME = 1712000000000;
-const BLOCK_TIME = 3000;
+const BLOCK_TIME = 3; // seconds per block (ethereum spec uses seconds, not ms)
 const SUPPORTED_METHODS = new Set([
   'eth_blockNumber','eth_chainId','net_version','eth_gasPrice',
   'net_listening','eth_mining','eth_syncing','web3_clientVersion',
@@ -27,27 +26,26 @@ function mulberry32(a) {
   }
 }
 
-// Deterministic random for consistent data across isolates
 function seededRng(seed) {
   const rng = mulberry32(seed);
   return {
     hex(len) { let s=""; for(let i=0;i<len;i++) s+="0123456789abcdef"[Math.floor(rng()*16)]; return s; },
     addr() { return "0x" + this.hex(40); },
-    hash() { return "0x" + this.hex(64); },
+    hash64() { return "0x" + this.hex(64); },
     int(min,max) { return min + Math.floor(rng()*(max-min+1)); },
     pick(arr) { return arr[Math.floor(rng()*arr.length)]; },
   };
 }
 
 function rHex(len) { let s=""; for(let i=0;i<len;i++) s+="0123456789abcdef"[Math.floor(Math.random()*16)]; return s; }
-function rHash() { return "0x" + rHex(64); }
+function rHash64() { return "0x" + rHex(64); }
 
-// Build the full chain state deterministically
+// Build deterministic chain state
+// Genesis time = now - 500 blocks * 3s, so latest block is ~now
 if (!globalThis._chainState) {
   const rng = seededRng(8848);
   const state = { blocks: [], transactions: [], blockNumber: 0, pendingTx: [], txHashMap: {}, accounts: [] };
 
-  // Create known accounts
   for (let i = 0; i < 25; i++) state.accounts.push(rng.addr());
 
   function createTx(bn, idx) {
@@ -56,7 +54,7 @@ if (!globalThis._chainState) {
     const val = BigInt(rng.int(1,200000)) * BigInt(10**15);
     const gas = BigInt(rng.int(21000,100000));
     const gp = BigInt(rng.int(1,10) * 1e9);
-    const hash = rng.hash();
+    const hash = rng.hash64();
     return {
       hash, nonce: "0x" + rng.int(0,200).toString(16),
       blockHash: null, blockNumber: "0x" + bn.toString(16),
@@ -71,8 +69,9 @@ if (!globalThis._chainState) {
     const txCount = rng.int(1,8);
     const txs = [];
     for (let i = 0; i < txCount; i++) txs.push(createTx(n, i));
-    const hash = rng.hash();
-    const ts = GENESIS_TIME + n * BLOCK_TIME;
+    const hash = rng.hash64();
+    // Timestamp in SECONDS (Ethereum spec), latest block ≈ now
+    const ts = Math.floor(Date.now() / 1000) - (500 - n) * BLOCK_TIME;
     const gasUsed = BigInt(rng.int(500000, parseInt("0x1c9c380", 16)));
     const miner = rng.pick(state.accounts);
     const block = {
@@ -80,9 +79,9 @@ if (!globalThis._chainState) {
       nonce: "0x0000000000000000",
       sha3Uncles: "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
       logsBloom: "0x" + "0".repeat(512),
-      transactionsRoot: "0x" + rng.hash(64),
-      stateRoot: "0x" + rng.hash(64),
-      receiptsRoot: "0x" + rng.hash(64),
+      transactionsRoot: "0x" + rng.hex(64),
+      stateRoot: "0x" + rng.hex(64),
+      receiptsRoot: "0x" + rng.hex(64),
       miner, difficulty: "0x0",
       totalDifficulty: "0x" + (n+1).toString(16),
       extraData: "0x457865436861696e",
@@ -93,7 +92,7 @@ if (!globalThis._chainState) {
       timestamp: "0x" + ts.toString(16),
       transactions: txs.map(t => t.hash),
       uncles: [],
-      mixHash: "0x" + rng.hash(64)
+      mixHash: rng.hash64()  // no double 0x - hash64() already includes 0x
     };
     txs.forEach(t => { t.blockHash = hash; state.transactions.push(t); state.txHashMap[t.hash] = t; });
     state.blocks.push(block);
@@ -119,7 +118,6 @@ function mineNewBlock() {
     tx.transactionIndex = "0x" + txs.length.toString(16);
     txs.push(tx);
   });
-  // Random filler txs
   const acc = s.accounts.length > 0 ? s.accounts : ["0x"+"0".repeat(40)];
   for (let i = 0; i < (1+Math.floor(Math.random()*3)); i++) {
     const from = acc[Math.floor(Math.random()*acc.length)];
@@ -127,11 +125,12 @@ function mineNewBlock() {
     const val = BigInt(Math.floor(Math.random()*100000))*BigInt(10**15);
     const gas = BigInt(21000+Math.floor(Math.random()*80000));
     const gp = BigInt(1e9+Math.floor(Math.random()*9e9));
-    const hash = rHash();
+    const hash = rHash64();
     txs.push({ hash, nonce:"0x"+Math.floor(Math.random()*100).toString(16), blockHash:null, blockNumber:"0x"+n.toString(16), transactionIndex:"0x"+txs.length.toString(16), from, to, value:"0x"+val.toString(16), gas:"0x"+gas.toString(16), gasPrice:"0x"+gp.toString(16), input:"0x" });
   }
-  const hash = rHash();
-  const ts = GENESIS_TIME + n * BLOCK_TIME;
+  const hash = rHash64();
+  // Dynamic timestamp: latest block is always "now"
+  const ts = Math.floor(Date.now() / 1000);
   const gasUsed = txs.reduce((sum,t) => sum + BigInt(t.gas), BigInt(0));
   const miner = acc[Math.floor(Math.random()*acc.length)];
   const parentHash = s.blocks[s.blockNumber] ? s.blocks[s.blockNumber].hash : "0x"+"0".repeat(64);
@@ -140,14 +139,14 @@ function mineNewBlock() {
     nonce:"0x0000000000000000",
     sha3Uncles:"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
     logsBloom:"0x"+"0".repeat(512),
-    transactionsRoot:"0x"+rHash(64), stateRoot:"0x"+rHash(64), receiptsRoot:"0x"+rHash(64),
+    transactionsRoot:rHash64(), stateRoot:rHash64(), receiptsRoot:rHash64(),
     miner, difficulty:"0x0", totalDifficulty:"0x"+(n+1).toString(16),
     extraData:"0x457865436861696e",
     size:"0x"+(500+Math.floor(Math.random()*500)).toString(16),
     gasLimit:"0x1c9c380", gasUsed:"0x"+gasUsed.toString(16),
     baseFeePerGas:"0x3b9aca00",
     timestamp:"0x"+ts.toString(16), transactions:txs.map(t=>t.hash), uncles:[],
-    mixHash:"0x"+rHash(64)
+    mixHash:rHash64()
   };
   txs.forEach(t => {
     t.blockHash = hash;
@@ -156,6 +155,16 @@ function mineNewBlock() {
   });
   s.blocks.push(block);
   s.blockNumber = n;
+}
+
+// Helper to ensure block timestamps are recent and in seconds
+function fixBlockTimestamp(blockNumber, storedTimestamp) {
+  const s = globalThis._chainState;
+  const now = Math.floor(Date.now() / 1000);
+  // How many blocks behind the latest this block is
+  const blockAge = s.blockNumber - blockNumber;
+  // Latest block should be ~now, earlier blocks proportionally earlier
+  return "0x" + Math.max(0, now - blockAge * BLOCK_TIME).toString(16);
 }
 
 function handleRPC(method, params) {
@@ -197,7 +206,7 @@ function handleRPC(method, params) {
       const input = params[0] || "";
       let from, to, value, gas, gasPrice, txData;
       if (typeof input === 'object' && (input.from || input.to)) {
-        from = input.from || rAddr();
+        from = input.from || "0x" + rHex(40);
         to = input.to || null;
         value = input.value || "0x0";
         gas = input.gas || input.gasLimit || "0x5208";
@@ -209,12 +218,12 @@ function handleRPC(method, params) {
           if (parsed && (parsed.from || parsed.to)) {
             from = parsed.from; to = parsed.to || null; value = parsed.value || "0x0";
             gas = parsed.gas || "0x5208"; gasPrice = parsed.gasPrice || "0x3b9aca00"; txData = parsed.data || "0x";
-          } else { from = rAddr(); to = rAddr(); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x"; }
-        } catch(e) { from = rAddr(); to = rAddr(); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x"; }
+          } else { from = "0x" + rHex(40); to = "0x" + rHex(40); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x"; }
+        } catch(e) { from = "0x" + rHex(40); to = "0x" + rHex(40); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x"; }
       } else {
-        from = rAddr(); to = rAddr(); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x";
+        from = "0x" + rHex(40); to = "0x" + rHex(40); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x";
       }
-      const hash = rHash();
+      const hash = rHash64();
       const tx = {
         hash, nonce: "0x0", blockHash: null, blockNumber: null, transactionIndex: null,
         from, to, value: String(value), gas: String(gas), gasPrice: String(gasPrice),
@@ -222,7 +231,6 @@ function handleRPC(method, params) {
       };
       s.pendingTx.push(tx);
       s.txHashMap[hash] = tx;
-      // Immediately mine so the tx is in a block
       mineNewBlock();
       return hash;
     }
@@ -232,6 +240,7 @@ function handleRPC(method, params) {
       let n = (p === "latest" || p === "pending" || p === "safe" || p === "finalized") ? s.blockNumber : p === "earliest" ? 0 : typeof p === "string" ? parseInt(p,16)||0 : 0;
       if (n < 0 || n > s.blockNumber) return null;
       const b = {...s.blocks[n]};
+      b.timestamp = fixBlockTimestamp(n, b.timestamp);
       if (params[1]) b.transactions = s.transactions.filter(t => parseInt(t.blockNumber,16) === n);
       return b;
     }
@@ -240,6 +249,7 @@ function handleRPC(method, params) {
       const b = s.blocks.find(bl => bl.hash === params[0]);
       if (!b) return null;
       const r = {...b};
+      r.timestamp = fixBlockTimestamp(parseInt(b.number,16), b.timestamp);
       if (params[1]) r.transactions = s.transactions.filter(t => t.blockHash === b.hash);
       return r;
     }
@@ -271,26 +281,25 @@ function handleRPC(method, params) {
     }
 
     case "eth_newBlockFilter": case "eth_newPendingTransactionFilter": case "eth_newFilter":
-      return "0x" + rHash(16);
+      return "0x" + rHex(16);
     case "eth_uninstallFilter": return true;
     case "eth_getFilterChanges":
-      // For block filters, return latest block hashes
       if (s.blocks.length > 0) return [s.blocks[s.blockNumber].hash];
       return [];
     case "eth_getFilterLogs": return [];
 
     // EIP-1559 methods (needed by MetaMask)
     case "eth_feeHistory": {
-      const blockCount = parseInt(params[0], 10) || 1;
+      const blockCount = Math.min(parseInt(params[0], 10) || 1, 1024);
       const newestBlock = params[1] === "latest" ? s.blockNumber : (parseInt(params[1],16)||s.blockNumber);
       const rewardPercentiles = Array.isArray(params[2]) ? params[2] : [25,50,75];
-      const baseFeePerGas = "0x3b9aca00"; // 1 Gwei
+      const baseFeePerGas = "0x3b9aca00";
       const gasUsedRatio = [];
       const rewards = [];
       const oldestBlock = Math.max(0, newestBlock - blockCount + 1);
       const baseFeePerGasArr = [];
       for (let i = 0; i < blockCount; i++) {
-        gasUsedRatio.push(Math.random() * 0.8);
+        gasUsedRatio.push(0.1 + Math.random() * 0.6);
         baseFeePerGasArr.push(baseFeePerGas);
         rewards.push(rewardPercentiles.map(() => "0x3b9aca00"));
       }
@@ -303,13 +312,11 @@ function handleRPC(method, params) {
       };
     }
     case "eth_maxPriorityFeePerGas": return "0x3b9aca00";
-    case "eth_maxFeePerGas": return "0x77359400"; // 2 Gwei
+    case "eth_maxFeePerGas": return "0x77359400";
 
-    default: return undefined; // undefined = method not found; null = supported but no result
+    default: return undefined;
   }
 }
-
-function rAddr() { return "0x" + rHex(40); }
 
 export default {
   async fetch(request) {
@@ -337,12 +344,10 @@ export default {
       const method = rpc.method || "";
       const params = rpc.params || [];
 
-      // Randomly mine new blocks for liveness
       if (Math.random() < 0.12) mineNewBlock();
 
       const result = handleRPC(method, params);
 
-      // KEY FIX: distinguish "method not found" (undefined) from "null result"
       if (result === undefined) {
         return new Response(JSON.stringify({
           jsonrpc: "2.0",
@@ -351,7 +356,6 @@ export default {
         }), {headers: {...CORS, ...JSON_HDR}});
       }
 
-      // null is a valid JSON-RPC result (e.g. block not found, tx not found)
       return new Response(JSON.stringify({
         jsonrpc: "2.0",
         result: result,
