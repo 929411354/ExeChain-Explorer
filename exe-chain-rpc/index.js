@@ -89,9 +89,11 @@ if (!globalThis._chainState) {
       size: "0x" + rng.int(400,1000).toString(16),
       gasLimit: "0x1c9c380",
       gasUsed: "0x" + gasUsed.toString(16),
+      baseFeePerGas: "0x3b9aca00",
       timestamp: "0x" + ts.toString(16),
       transactions: txs.map(t => t.hash),
-      uncles: []
+      uncles: [],
+      mixHash: "0x" + rng.hash(64)
     };
     txs.forEach(t => { t.blockHash = hash; state.transactions.push(t); state.txHashMap[t.hash] = t; });
     state.blocks.push(block);
@@ -143,7 +145,9 @@ function mineNewBlock() {
     extraData:"0x457865436861696e",
     size:"0x"+(500+Math.floor(Math.random()*500)).toString(16),
     gasLimit:"0x1c9c380", gasUsed:"0x"+gasUsed.toString(16),
-    timestamp:"0x"+ts.toString(16), transactions:txs.map(t=>t.hash), uncles:[]
+    baseFeePerGas:"0x3b9aca00",
+    timestamp:"0x"+ts.toString(16), transactions:txs.map(t=>t.hash), uncles:[],
+    mixHash:"0x"+rHash(64)
   };
   txs.forEach(t => {
     t.blockHash = hash;
@@ -170,7 +174,7 @@ function handleRPC(method, params) {
     case "eth_coinbase": return s.accounts[0] || "0x" + "0".repeat(40);
     case "eth_hashrate": return "0x0";
     case "eth_accounts": return [];
-    case "eth_getBalance": return "0x56bc75e2d63100000";
+    case "eth_getBalance": return "0x84595161401484a000000"; // 10,000,000 EXE
     case "eth_getCode": return "0x";
     case "eth_call": return "0x";
     case "eth_getStorageAt": return "0x" + "0".repeat(64);
@@ -225,7 +229,7 @@ function handleRPC(method, params) {
 
     case "eth_getBlockByNumber": {
       const p = params[0];
-      let n = p === "latest" || p === "pending" ? s.blockNumber : p === "earliest" ? 0 : typeof p === "string" ? parseInt(p,16)||0 : 0;
+      let n = (p === "latest" || p === "pending" || p === "safe" || p === "finalized") ? s.blockNumber : p === "earliest" ? 0 : typeof p === "string" ? parseInt(p,16)||0 : 0;
       if (n < 0 || n > s.blockNumber) return null;
       const b = {...s.blocks[n]};
       if (params[1]) b.transactions = s.transactions.filter(t => parseInt(t.blockNumber,16) === n);
@@ -242,7 +246,7 @@ function handleRPC(method, params) {
 
     case "eth_getBlockTransactionCountByNumber": {
       const p = params[0];
-      let n = p === "latest" ? s.blockNumber : typeof p === "string" ? parseInt(p,16)||0 : 0;
+      let n = (p === "latest" || p === "safe" || p === "finalized") ? s.blockNumber : typeof p === "string" ? parseInt(p,16)||0 : 0;
       if (n < 0 || n > s.blockNumber) return "0x0";
       const b = s.blocks[n];
       return b ? "0x" + (Array.isArray(b.transactions) ? b.transactions.length : 0).toString(16) : "0x0";
@@ -263,14 +267,43 @@ function handleRPC(method, params) {
     case "eth_getTransactionReceipt": {
       const tx = s.txHashMap[params[0]] || s.transactions.find(t => t.hash === params[0]);
       if (!tx || !tx.blockHash) return null;
-      return {...tx, contractAddress:null, cumulativeGasUsed:tx.gas, effectiveGasPrice:tx.gasPrice, logs:[], logsBloom:"0x"+"0".repeat(512), status:"0x1", type:"0x0"};
+      return {...tx, contractAddress:null, cumulativeGasUsed:tx.gas, effectiveGasPrice:tx.gasPrice, logs:[], logsBloom:"0x"+"0".repeat(512), status:"0x1", type:tx.type||"0x0"};
     }
 
     case "eth_newBlockFilter": case "eth_newPendingTransactionFilter": case "eth_newFilter":
       return "0x" + rHash(16);
     case "eth_uninstallFilter": return true;
-    case "eth_getFilterChanges": return [];
+    case "eth_getFilterChanges":
+      // For block filters, return latest block hashes
+      if (s.blocks.length > 0) return [s.blocks[s.blockNumber].hash];
+      return [];
     case "eth_getFilterLogs": return [];
+
+    // EIP-1559 methods (needed by MetaMask)
+    case "eth_feeHistory": {
+      const blockCount = parseInt(params[0], 10) || 1;
+      const newestBlock = params[1] === "latest" ? s.blockNumber : (parseInt(params[1],16)||s.blockNumber);
+      const rewardPercentiles = Array.isArray(params[2]) ? params[2] : [25,50,75];
+      const baseFeePerGas = "0x3b9aca00"; // 1 Gwei
+      const gasUsedRatio = [];
+      const rewards = [];
+      const oldestBlock = Math.max(0, newestBlock - blockCount + 1);
+      const baseFeePerGasArr = [];
+      for (let i = 0; i < blockCount; i++) {
+        gasUsedRatio.push(Math.random() * 0.8);
+        baseFeePerGasArr.push(baseFeePerGas);
+        rewards.push(rewardPercentiles.map(() => "0x3b9aca00"));
+      }
+      return {
+        oldestBlock: "0x" + oldestBlock.toString(16),
+        baseFeePerGas: baseFeePerGas,
+        gasUsedRatio,
+        reward: rewards.length > 0 ? rewards[rewards.length-1] : rewardPercentiles.map(() => "0x0"),
+        baseFeePerGasArr
+      };
+    }
+    case "eth_maxPriorityFeePerGas": return "0x3b9aca00";
+    case "eth_maxFeePerGas": return "0x77359400"; // 2 Gwei
 
     default: return undefined; // undefined = method not found; null = supported but no result
   }
