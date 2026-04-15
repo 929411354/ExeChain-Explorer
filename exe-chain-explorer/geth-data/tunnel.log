@@ -163,3 +163,26 @@ Wed Apr 15 12:39:36 UTC 2026: Starting tunnel...
 2026-04-15T12:44:05Z INF Registered tunnel connection connIndex=2 connection=d2d0bc6f-5e33-4a0e-b485-1d562ac641aa event=0 ip=198.41.192.37 location=hkg01 protocol=quic
 2026-04-15T12:44:05Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=3 event=0 ip=198.41.200.23
 2026-04-15T12:44:06Z INF Registered tunnel connection connIndex=3 connection=19b28f97-697c-4e03-805a-51676c577534 event=0 ip=198.41.200.23 location=hkg13 protocol=quic
+2026-04-15T14:19:54Z INF Starting tunnel tunnelID=f7fa7ebd-d81f-4840-b882-eded29622250
+2026-04-15T14:19:54Z INF Version 2026.3.0 (Checksum 4a9e50e6d6d798e90fcd01933151a90bf7edd99a0a55c28ad18f2e16263a5c30)
+2026-04-15T14:19:54Z INF GOOS: linux, GOVersion: go1.24.13, GoArch: amd64
+2026-04-15T14:19:54Z INF Settings: map[no-autoupdate:true token:*****]
+2026-04-15T14:19:54Z INF Generated Connector ID: bb1d9d7e-76c1-473e-8269-abe0bf129568
+2026-04-15T14:19:54Z INF Initial protocol quic
+2026-04-15T14:19:54Z INF ICMP proxy will use 21.0.8.102 as source for IPv4
+2026-04-15T14:19:54Z INF ICMP proxy will use fe80::607f:44ff:fee4:9843 in zone eth0 as source for IPv6
+2026-04-15T14:19:54Z WRN The user running cloudflared process has a GID (group ID) that is not within ping_group_range. You might need to add that user to a group within that range, or instead update the range to encompass a group the user is already in by modifying /proc/sys/net/ipv4/ping_group_range. Otherwise cloudflared will not be able to ping this network error="Group ID 1001 is not between ping group 1 to 0"
+2026-04-15T14:19:54Z WRN ICMP proxy feature is disabled error="cannot create ICMPv4 proxy: Group ID 1001 is not between ping group 1 to 0 nor ICMPv6 proxy: socket: permission denied"
+2026-04-15T14:19:54Z INF ICMP proxy will use 21.0.8.102 as source for IPv4
+2026-04-15T14:19:54Z INF ICMP proxy will use fe80::607f:44ff:fee4:9843 in zone eth0 as source for IPv6
+2026-04-15T14:19:54Z INF Starting metrics server on 127.0.0.1:20241/metrics
+2026-04-15T14:19:54Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.200.113
+2026/04/15 14:19:54 failed to sufficiently increase receive buffer size (was: 208 kiB, wanted: 7168 kiB, got: 416 kiB). See https://github.com/quic-go/quic-go/wiki/UDP-Buffer-Sizes for details.
+2026-04-15T14:19:55Z INF Registered tunnel connection connIndex=0 connection=e8757b10-9dc7-4cee-8bff-65bcd3b0b105 event=0 ip=198.41.200.113 location=hkg12 protocol=quic
+2026-04-15T14:19:55Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=1 event=0 ip=198.41.192.27
+2026-04-15T14:19:55Z INF Updated to new configuration config="{\"ingress\":[{\"hostname\":\"rpc-internal.exepc.top\", \"service\":\"http://127.0.0.1:8545\"}, {\"service\":\"http_status:404\"}], \"warp-routing\":{\"enabled\":false}}" version=1
+2026-04-15T14:19:56Z INF Registered tunnel connection connIndex=1 connection=d371e5f1-066e-4873-a33a-d243c2f12411 event=0 ip=198.41.192.27 location=hkg01 protocol=quic
+2026-04-15T14:19:56Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=2 event=0 ip=198.41.192.77
+2026-04-15T14:19:57Z INF Registered tunnel connection connIndex=2 connection=8fe67234-be32-4d37-81d2-cc0db6461068 event=0 ip=198.41.192.77 location=hkg09 protocol=quic
+2026-04-15T14:19:57Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=3 event=0 ip=198.41.200.73
+2026-04-15T14:19:58Z INF Registered tunnel connection connIndex=3 connection=7f8fa152-1c97-4bc9-9811-c6241233a132 event=0 ip=198.41.200.73 location=hkg12 protocol=quic
