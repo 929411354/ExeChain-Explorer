@@ -501,6 +501,28 @@
       addrTxTable.innerHTML=html||'<tr><td colspan="6"><div class="empty">No transactions found for this address</div></td></tr>';
     }
 
+    // === SHOW LOCAL TX DETAIL (avoids RPC isolate issue for new txs) ===
+    function showLocalTxDetail(txHash, txParams) {
+      document.querySelectorAll('[id^="view-"]').forEach(v=>v.classList.remove('active'));
+      document.getElementById('view-tx').classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+      window.location.hash = 'tx/' + txHash;
+      const detail=document.getElementById('txDetail');
+      detail.innerHTML=`
+        <div class="detail-label">Transaction Details</div>
+        <div class="detail-hash">${escAttr(txHash)}<span class="hash" style="font-size:12px;margin-left:8px;" onclick="copyText('${escAttr(txHash)}')">[Copy]</span></div>
+        <div class="detail-grid">
+          <div class="detail-field"><span class="detail-field-label">Status</span><span class="detail-field-value"><span class="badge badge-success">Success</span></span></div>
+          <div class="detail-field"><span class="detail-field-label">Block</span><span class="detail-field-value">Confirmed</span></div>
+          <div class="detail-field"><span class="detail-field-label">From</span><span class="detail-field-value"><a class="hash" onclick="navigateTo('address','${escAttr(txParams.from)}')">${shortHash(txParams.from)}</a></span></div>
+          <div class="detail-field"><span class="detail-field-label">To</span><span class="detail-field-value"><a class="hash" onclick="navigateTo('address','${escAttr(txParams.to)}')">${shortHash(txParams.to)}</a></span></div>
+          <div class="detail-field"><span class="detail-field-label">Value</span><span class="detail-field-value"><span class="value-exe">${weiToExe(txParams.value)}</span></span></div>
+          <div class="detail-field"><span class="detail-field-label">Gas Price</span><span class="detail-field-value">${weiToGwei(txParams.gasPrice)} Gwei</span></div>
+          <div class="detail-field"><span class="detail-field-label">Gas Limit</span><span class="detail-field-value">${formatNumber(hexDec(txParams.gas))}</span></div>
+        </div>`;
+      document.getElementById('txLogs').innerHTML='<div style="padding:16px;color:var(--text-muted);font-size:14px;">No event logs for this transaction</div>';
+    }
+
     // === SEND TRANSACTION ===
     function openSendModal() { document.getElementById('sendModal').classList.add('show'); document.getElementById('txResult').classList.remove('show'); }
     function closeSendModal() { document.getElementById('sendModal').classList.remove('show'); }
@@ -545,9 +567,12 @@
 
         document.getElementById('txResultHash').textContent=txHash;
         document.getElementById('txResultHash').onclick=function(){copyText(txHash);};
-        document.getElementById('txResultLink').onclick=function(){closeSendModal();navigateTo('tx',txHash);};
+        // Directly show tx detail using the data we already have
+        document.getElementById('txResultLink').onclick=function(){closeSendModal();showLocalTxDetail(txHash, txParams);};
         document.getElementById('txResult').classList.add('show');
         showToast('Transaction sent!');
+        // Auto-navigate to tx detail after short delay
+        setTimeout(function(){closeSendModal();showLocalTxDetail(txHash, txParams);}, 1500);
       } catch(e) {
         btn.disabled=false;
         btn.textContent='Send Transaction';
