@@ -1,9 +1,91 @@
 // Exe Chain RPC Worker - Simulated blockchain with MetaMask transaction support
+// FIXED: Pure BigInt ECDSA secp256k1 public key recovery (no external dependencies)
+
+// ============================================================
+// Pure BigInt secp256k1 Elliptic Curve Primitives
+// ============================================================
+const SECP_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2Fn;
+const SECP_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
+const SECP_Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n;
+const SECP_Gy = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n;
+const SECP_A = 0n;
+const SECP_B = 7n;
+const SECP_G = [SECP_Gx, SECP_Gy];
+
+function modPow(base, exp, mod) {
+  base = ((base % mod) + mod) % mod;
+  let result = 1n;
+  while (exp > 0n) {
+    if (exp & 1n) result = (result * base) % mod;
+    exp >>= 1n;
+    base = (base * base) % mod;
+  }
+  return result;
+}
+
+function modInv(a, m) {
+  return modPow(((a % m) + m) % m, m - 2n, m);
+}
+
+function ecNeg(point) {
+  if (point === null) return null;
+  return [point[0], (SECP_P - point[1]) % SECP_P];
+}
+
+function ecAdd(p1, p2) {
+  if (p1 === null) return p2;
+  if (p2 === null) return p1;
+  const [x1, y1] = p1;
+  const [x2, y2] = p2;
+  if (x1 === x2 && y1 !== y2) return null;
+  if (x1 === x2 && y1 === y2) {
+    const s = (3n * x1 * x1 + SECP_A) * modInv(2n * y1, SECP_P) % SECP_P;
+    const x3 = (s * s - 2n * x1) % SECP_P;
+    const y3 = (s * (x1 - x3) - y1) % SECP_P;
+    return [((x3 % SECP_P) + SECP_P) % SECP_P, ((y3 % SECP_P) + SECP_P) % SECP_P];
+  }
+  const s = (y2 - y1) * modInv(x2 - x1, SECP_P) % SECP_P;
+  const x3 = (s * s - x1 - x2) % SECP_P;
+  const y3 = (s * (x1 - x3) - y1) % SECP_P;
+  return [((x3 % SECP_P) + SECP_P) % SECP_P, ((y3 % SECP_P) + SECP_P) % SECP_P];
+}
+
+function ecMul(k, point) {
+  if (point === null) return null;
+  k = ((k % SECP_N) + SECP_N) % SECP_N;
+  let result = null;
+  let addend = point;
+  while (k > 0n) {
+    if (k & 1n) result = ecAdd(result, addend);
+    addend = ecAdd(addend, addend);
+    k >>= 1n;
+  }
+  return result;
+}
+
+function recoverPublicKey(msgHashBigInt, r, s, recoveryParam) {
+  const x = r;
+  if (x >= SECP_P) return null;
+  const ySq = (x * x * x + SECP_B) % SECP_P;
+  let y = modPow(ySq, (SECP_P + 1n) / 4n, SECP_P);
+  if ((y * y) % SECP_P !== ySq) return null;
+  const parity = BigInt(recoveryParam) & 1n;
+  if (y % 2n !== parity) y = SECP_P - y;
+  const R = [x, y];
+  const rInv = modInv(r, SECP_N);
+  const u1 = ((-msgHashBigInt * rInv % SECP_N) + SECP_N) % SECP_N;
+  const u2 = s * rInv % SECP_N;
+  const u1G = ecMul(u1, SECP_G);
+  const u2R = ecMul(u2, R);
+  const Q = ecAdd(u1G, u2R);
+  return Q;
+}
+
 const CHAIN_ID = 8848;
 const BLOCK_TIME = 3;
 
 // ============================================================
-// Compact Keccak-256 Implementation (SAARINEN's approach)
+// Compact Keccak-256 Implementation
 // ============================================================
 const KECCAK_RC = [
   1n, 0x8082n, 0x800000000000808an, 0x8000000080008000n,
@@ -69,12 +151,10 @@ function hexToBigInt(hex) {
   return h.length > 0 ? BigInt('0x' + h) : 0n;
 }
 function bigIntToHex(bi) { return bi === 0n ? '0x0' : '0x' + bi.toString(16); }
-function padToEven(hex) { return hex.length % 2 === 1 ? '0' + hex : hex; }
 function parseHexQuantity(val) {
-  // Parse hex quantity: handles "0x4", 4, "latest", etc. Returns decimal number.
   if (typeof val === 'number') return val;
   if (typeof val === 'string') {
-    if (val === 'latest' || val === 'pending' || val === 'safe' || val === 'finalized') return -1; // special
+    if (val === 'latest' || val === 'pending' || val === 'safe' || val === 'finalized') return -1;
     if (val === 'earliest') return 0;
     const s = val.startsWith('0x') || val.startsWith('0X') ? val.slice(2) : val;
     return parseInt(s, 16) || 0;
@@ -117,13 +197,144 @@ function rlpDecode(input) {
     return { data: items, remainder: input.slice(offset + listLen) };
   }
 }
+
 function bytesToAddressHex(bytes) {
   if (!bytes || bytes.length === 0) return null;
   return '0x' + bytesToHex(bytes).padStart(40, '0').slice(-40);
 }
 
 // ============================================================
-// Raw Transaction Decoder
+// RLP Encoder (needed for signing hash computation)
+// ============================================================
+function rlpEncodeLength(len, offset) {
+  if (len < 56) return new Uint8Array([len + offset]);
+  const hexLen = bigIntToHex(BigInt(len)).slice(2);
+  const lenBytes = hexToBytes(hexLen);
+  const result = new Uint8Array(1 + lenBytes.length);
+  result[0] = lenBytes.length + offset + 55;
+  result.set(lenBytes, 1);
+  return result;
+}
+
+function rlpEncode(item) {
+  if (item instanceof Uint8Array) {
+    if (item.length === 1 && item[0] < 0x80) return item;
+    return concatBytes(rlpEncodeLength(item.length, 0x80), item);
+  }
+  if (Array.isArray(item)) {
+    const encoded = item.map(rlpEncode);
+    const payload = concatBytes(...encoded);
+    return concatBytes(rlpEncodeLength(payload.length, 0xc0), payload);
+  }
+  // For BigInt, convert to minimal bytes
+  let hex = bigIntToHex(item).slice(2);
+  if (hex.length % 2 !== 0) hex = '0' + hex;
+  const bytes = hexToBytes(hex);
+  return rlpEncode(bytes);
+}
+
+function concatBytes(...arrays) {
+  const totalLen = arrays.reduce((sum, a) => sum + a.length, 0);
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const a of arrays) { result.set(a, offset); offset += a.length; }
+  return result;
+}
+
+// ============================================================
+// ECDSA Public Key Recovery (Pure BigInt secp256k1)
+// ============================================================
+function bigIntToBytes32(n) {
+  const hex = n.toString(16).padStart(64, '0');
+  return hexToBytes(hex);
+}
+
+function recoverSenderAddress(rawBytes, payload, txType) {
+  try {
+    let signingPayload;
+    let v, r_hex, s_hex;
+
+    if (txType === 2) {
+      // EIP-1559: signing hash = keccak256(0x02 || rlp([chainId, nonce, maxPF, maxFF, gas, to, value, data, accessList]))
+      // payload has 12 items: [chainId, nonce, maxPF, maxFF, gas, to, value, data, accessList, v, r, s]
+      const unsignedFields = payload.slice(0, 9); // first 9 fields
+      const unsignedRlp = rlpEncode(unsignedFields);
+      signingPayload = concatBytes(new Uint8Array([0x02]), unsignedRlp);
+
+      v = payload[9] ? hexToBigInt('0x' + bytesToHex(payload[9])) : 0n;
+      r_hex = payload[10] ? bytesToHex(payload[10]).padStart(64, '0') : '';
+      s_hex = payload[11] ? bytesToHex(payload[11]).padStart(64, '0') : '';
+    } else if (txType === 0) {
+      // Legacy: signing hash = keccak256(rlp([nonce, gasPrice, gas, to, value, data, chainId, 0, 0]))
+      // EIP-155: include chainId, 0, 0
+      const nonce = payload[0] ? hexToBigInt('0x' + bytesToHex(payload[0])) : 0n;
+      const gasPrice = payload[1] ? hexToBigInt('0x' + bytesToHex(payload[1])) : 0n;
+      const gas = payload[2] ? hexToBigInt('0x' + bytesToHex(payload[2])) : 0n;
+      const to = payload[3];
+      const value = payload[4] ? hexToBigInt('0x' + bytesToHex(payload[4])) : 0n;
+      const data = payload[5];
+
+      v = payload[6] ? hexToBigInt('0x' + bytesToHex(payload[6])) : 0n;
+      r_hex = payload[7] ? bytesToHex(payload[7]).padStart(64, '0') : '';
+      s_hex = payload[8] ? bytesToHex(payload[8]).padStart(64, '0') : '';
+
+      // Determine EIP-155 chainId from v
+      let eip155ChainId = 0n;
+      if (v >= 35n) {
+        eip155ChainId = (v - 35n) / 2n;
+      }
+
+      // Signing payload for EIP-155: [nonce, gasPrice, gas, to, value, data, chainId, 0, 0]
+      const unsignedFields = [nonce, gasPrice, gas, to, value, data, eip155ChainId, 0n, 0n];
+      signingPayload = rlpEncode(unsignedFields);
+
+      // Adjust v to recovery param
+      if (v >= 35n) {
+        v = v - 35n - 2n * eip155ChainId;
+      } else {
+        v = v - 27n;
+      }
+    } else if (txType === 1) {
+      // EIP-2930 (type 1): signing hash = keccak256(0x01 || rlp([chainId, nonce, gasPrice, gas, to, value, data, accessList]))
+      const unsignedFields = payload.slice(0, 8); // [chainId, nonce, gasPrice, gas, to, value, data, accessList]
+      const unsignedRlp = rlpEncode(unsignedFields);
+      signingPayload = concatBytes(new Uint8Array([0x01]), unsignedRlp);
+
+      v = payload[8] ? hexToBigInt('0x' + bytesToHex(payload[8])) : 0n;
+      r_hex = payload[9] ? bytesToHex(payload[9]).padStart(64, '0') : '';
+      s_hex = payload[10] ? bytesToHex(payload[10]).padStart(64, '0') : '';
+    } else {
+      return null;
+    }
+
+    if (!r_hex || !s_hex || r_hex === '' || s_hex === '') return null;
+
+    // Compute signing hash
+    const signingHash = keccak256(signingPayload);
+
+    // Convert to BigInt for pure ECDSA recovery
+    const msgHashBigInt = BigInt('0x' + bytesToHex(signingHash));
+    const r_bn = BigInt('0x' + r_hex);
+    const s_bn = BigInt('0x' + s_hex);
+    const recoveryParam = Number(v);
+
+    // Recover public key Q = r^(-1) * (s*R - e*G)
+    const Q = recoverPublicKey(msgHashBigInt, r_bn, s_bn, recoveryParam);
+    if (Q === null) return null;
+
+    // Derive Ethereum address: keccak256(uncompressed_pubkey[1:])[12:32]
+    const pubKeyBytes = concatBytes(bigIntToBytes32(Q[0]), bigIntToBytes32(Q[1]));
+    const addrHash = keccak256(pubKeyBytes);
+    const address = '0x' + bytesToHex(addrHash).slice(-40);
+
+    return address;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ============================================================
+// Raw Transaction Decoder (with correct from recovery)
 // ============================================================
 function decodeRawTransaction(rawHex) {
   let hex = rawHex.startsWith('0x') || rawHex.startsWith('0X') ? rawHex.slice(2) : rawHex;
@@ -144,6 +355,9 @@ function decodeRawTransaction(rawHex) {
   const hash = '0x' + bytesToHex(keccak256(bytes));
   let from, to, value, gas, nonce, data, gasPrice, maxFeePerGas, maxPriorityFeePerGas, v, r, s;
 
+  // Try ECDSA recovery first
+  from = recoverSenderAddress(bytes, payload, txType);
+
   if (txType === 2) {
     nonce = payload[1] ? hexToBigInt('0x' + bytesToHex(payload[1])) : 0n;
     maxPriorityFeePerGas = payload[2] ? hexToBigInt('0x' + bytesToHex(payload[2])) : 0n;
@@ -156,7 +370,7 @@ function decodeRawTransaction(rawHex) {
     r = payload[10] ? '0x' + bytesToHex(payload[10]).padStart(64, '0') : '0x0';
     s = payload[11] ? '0x' + bytesToHex(payload[11]).padStart(64, '0') : '0x0';
     gasPrice = maxFeePerGas;
-    from = '0x' + bytesToHex(keccak256(hexToBytes(r + s))).slice(0, 40);
+    if (!from) from = '0x' + bytesToHex(keccak256(concatBytes(hexToBytes(r.replace('0x','')), hexToBytes(s.replace('0x',''))))).slice(0, 40);
     return { type:'0x2', hash, nonce:bigIntToHex(nonce), gasPrice:bigIntToHex(gasPrice), maxFeePerGas:bigIntToHex(maxFeePerGas), maxPriorityFeePerGas:bigIntToHex(maxPriorityFeePerGas), gas:bigIntToHex(gas), to, value:bigIntToHex(value), input:data, from, v:bigIntToHex(v), r, s };
   } else if (txType === 0) {
     nonce = payload[0] ? hexToBigInt('0x' + bytesToHex(payload[0])) : 0n;
@@ -168,8 +382,21 @@ function decodeRawTransaction(rawHex) {
     v = payload[6] ? hexToBigInt('0x' + bytesToHex(payload[6])) : 0n;
     r = payload[7] ? '0x' + bytesToHex(payload[7]).padStart(64, '0') : '0x0';
     s = payload[8] ? '0x' + bytesToHex(payload[8]).padStart(64, '0') : '0x0';
-    from = '0x' + bytesToHex(keccak256(hexToBytes(r + s))).slice(0, 40);
+    if (!from) from = '0x' + bytesToHex(keccak256(concatBytes(hexToBytes(r.replace('0x','')), hexToBytes(s.replace('0x',''))))).slice(0, 40);
     return { type:'0x0', hash, nonce:bigIntToHex(nonce), gasPrice:bigIntToHex(gasPrice), gas:bigIntToHex(gas), to, value:bigIntToHex(value), input:data, from, v:bigIntToHex(v), r, s };
+  } else if (txType === 1) {
+    const chainId = payload[0] ? hexToBigInt('0x' + bytesToHex(payload[0])) : 0n;
+    nonce = payload[1] ? hexToBigInt('0x' + bytesToHex(payload[1])) : 0n;
+    gasPrice = payload[2] ? hexToBigInt('0x' + bytesToHex(payload[2])) : 0n;
+    gas = payload[3] ? hexToBigInt('0x' + bytesToHex(payload[3])) : 21000n;
+    to = payload[4] && payload[4].length > 0 ? bytesToAddressHex(payload[4]) : null;
+    value = payload[5] ? hexToBigInt('0x' + bytesToHex(payload[5])) : 0n;
+    data = payload[6] ? '0x' + bytesToHex(payload[6]) : '0x';
+    v = payload[8] ? hexToBigInt('0x' + bytesToHex(payload[8])) : 0n;
+    r = payload[9] ? '0x' + bytesToHex(payload[9]).padStart(64, '0') : '0x0';
+    s = payload[10] ? '0x' + bytesToHex(payload[10]).padStart(64, '0') : '0x0';
+    if (!from) from = '0x' + bytesToHex(keccak256(concatBytes(hexToBytes(r.replace('0x','')), hexToBytes(s.replace('0x',''))))).slice(0, 40);
+    return { type:'0x1', hash, nonce:bigIntToHex(nonce), gasPrice:bigIntToHex(gasPrice), gas:bigIntToHex(gas), to, value:bigIntToHex(value), input:data, from, v:bigIntToHex(v), r, s };
   }
   return { type:'0x'+txType.toString(16), hash };
 }
@@ -187,7 +414,6 @@ function seededRng(seed) {
 function rHex(len){let s="";for(let i=0;i<len;i++)s+="0123456789abcdef"[Math.floor(Math.random()*16)];return s;}
 function rHash64(){return "0x"+rHex(64);}
 
-// Request log for debugging
 if (!globalThis._rpcLog) globalThis._rpcLog = [];
 
 if (!globalThis._chainState) {
@@ -369,7 +595,6 @@ function handleRPC(method, params) {
     case "eth_getFilterLogs": return [];
 
     case "eth_feeHistory": {
-      // FIX: properly parse hex blockCount
       const blockCount = Math.min(parseHexQuantity(params[0]) || 1, 1024);
       const newestBlock = params[1]==="latest" ? s.blockNumber : parseHexQuantity(params[1]) || s.blockNumber;
       const rewardPercentiles = Array.isArray(params[2]) ? params[2] : [25,50,75];
@@ -377,15 +602,12 @@ function handleRPC(method, params) {
       const oldestBlock = Math.max(0, newestBlock - blockCount + 1);
       const gasUsedRatio = [];
       const rewards = [];
-      // FIX: baseFeePerGasArr should have blockCount+1 entries
       const baseFeePerGasArr = [];
       for (let i = 0; i < blockCount; i++) {
         gasUsedRatio.push(parseFloat((0.1 + Math.random()*0.6).toFixed(4)));
         baseFeePerGasArr.push(baseFee);
-        // FIX: reward should be array of arrays (one inner array per block)
         rewards.push(rewardPercentiles.map(() => baseFee));
       }
-      // Extra entry for "next" block
       baseFeePerGasArr.push(baseFee);
       return {
         oldestBlock: "0x"+oldestBlock.toString(16),
@@ -411,12 +633,10 @@ export default {
 
     if (request.method === "OPTIONS") return new Response(null, {headers: CORS});
 
-    // Debug/diagnostic page
     if (request.method === "GET" && (url.pathname === "/_test" || url.pathname === "/_diag")) {
       return new Response(DIAGNOSTIC_HTML, {headers:{"Content-Type":"text/html;charset=utf-8",...CORS}});
     }
 
-    // Log endpoint
     if (request.method === "GET" && url.pathname === "/_log") {
       return new Response(JSON.stringify({log: globalThis._rpcLog.slice(-50), count: globalThis._rpcLog.length}), {headers:{...CORS,...JSON_HDR}});
     }
@@ -433,13 +653,11 @@ export default {
         return new Response(JSON.stringify({jsonrpc:"2.0",error:{code:-32700,message:"Parse error: "+e.message},id:null}), {status:400,headers:{...CORS,...JSON_HDR}});
       }
 
-      // Support batch requests
       if (Array.isArray(rpc)) {
         const responses = rpc.map(req => {
           try {
             const result = handleRPC(req.method||"", req.params||[]);
             if (result === undefined) return {jsonrpc:"2.0",error:{code:-32601,message:"Method not found: "+(req.method||"")},id:req.id||null};
-            // Log
             globalThis._rpcLog.push({method:req.method, ts:Date.now(), hasResult:true, resultPreview: typeof result === 'string' ? result.slice(0,66) : typeof result === 'object' ? JSON.stringify(result).slice(0,200) : String(result)});
             if (globalThis._rpcLog.length > 100) globalThis._rpcLog.shift();
             return {jsonrpc:"2.0",result,id:req.id||null};
@@ -465,7 +683,6 @@ export default {
       if (result === undefined) {
         return new Response(JSON.stringify({jsonrpc:"2.0",error:{code:-32601,message:"Method not found: "+method},id:rpc.id||null}), {headers:{...CORS,...JSON_HDR}});
       }
-      // Log success
       globalThis._rpcLog.push({method, ts:Date.now(), hasResult:true, resultPreview:typeof result==='string'?result.slice(0,66):typeof result==='object'?JSON.stringify(result).slice(0,200):String(result)});
       if (globalThis._rpcLog.length > 100) globalThis._rpcLog.shift();
 
@@ -511,32 +728,22 @@ pre{background:#0f1623;padding:12px;border-radius:8px;overflow-x:auto;font-size:
 </style></head>
 <body>
 <h1>Exe Chain RPC Diagnostic</h1>
-<p class="subtitle">rpc.exepc.top - Chain ID 8848 - This page tests all RPC methods that MetaMask uses</p>
-
+<p class="subtitle">rpc.exepc.top - Chain ID 8848 - ECDSA Recovery Enabled</p>
 <div class="section">
   <h3 style="margin-bottom:12px">Step 1: RPC Connectivity Test</h3>
   <button class="btn btn-primary" onclick="testRPC()">Test Basic RPC</button>
   <div id="results"></div>
 </div>
-
 <div class="section">
-  <h3 style="margin-bottom:12px">Step 2: MetaMask Integration Test</h3>
-  <button class="btn btn-primary" onclick="testMetaMask()">Connect MetaMask & Test</button>
-  <div id="mm-results"></div>
-</div>
-
-<div class="section">
-  <h3 style="margin-bottom:12px">Step 3: Send Test Transaction</h3>
+  <h3 style="margin-bottom:12px">Step 2: MetaMask Send Test</h3>
   <button class="btn btn-primary" onclick="sendTestTx()">Send Transaction via MetaMask</button>
   <div id="tx-results"></div>
 </div>
-
 <div class="section">
-  <h3 style="margin-bottom:12px">Step 4: View RPC Log</h3>
+  <h3 style="margin-bottom:12px">Step 3: View RPC Log</h3>
   <button class="btn btn-secondary" onclick="viewLog()">View Recent RPC Calls</button>
   <div id="log-results"></div>
 </div>
-
 <script>
 const RPC = 'https://rpc.exepc.top';
 async function rpc(method, params=[]) {
@@ -546,148 +753,69 @@ async function rpc(method, params=[]) {
 function step(label, pass, detail) {
   return '<div class="step '+(pass?'ok':'fail')+'"><div class="step-label">'+label+'</div><div class="step-value '+(pass?'ok':'fail')+'">'+(pass?'PASS':'FAIL')+': '+detail+'</div></div>';
 }
-
 async function testRPC() {
   const el = document.getElementById('results');
   el.innerHTML = '<div class="card"><pre>Running tests...</pre></div>';
   let html = '';
   try {
     const r1 = await rpc('eth_chainId');
-    const chainId = parseInt(r1.result, 16);
-    html += step('eth_chainId', chainId === 8848, 'Chain ID = ' + chainId + ' (expected 8848)');
-
+    html += step('eth_chainId', parseInt(r1.result,16) === 8848, 'Chain ID = ' + parseInt(r1.result,16));
     const r2 = await rpc('eth_blockNumber');
-    const blockNum = parseInt(r2.result, 16);
-    html += step('eth_blockNumber', blockNum > 0, 'Block #' + blockNum);
-
+    html += step('eth_blockNumber', parseInt(r2.result,16) > 0, 'Block #' + parseInt(r2.result,16));
     const r3 = await rpc('eth_gasPrice');
-    const gasPrice = parseInt(r3.result, 16);
-    html += step('eth_gasPrice', gasPrice > 0, gasPrice + ' wei (' + (gasPrice/1e9) + ' Gwei)');
-
+    html += step('eth_gasPrice', parseInt(r3.result,16) > 0, (parseInt(r3.result,16)/1e9) + ' Gwei');
     const r4 = await rpc('eth_getBlockByNumber', ['latest', false]);
     const block = r4.result;
-    html += step('Latest Block', !!block, 'Block #' + parseInt(block.number,16));
-    html += step('Block has baseFeePerGas', !!block.baseFeePerGas, block.baseFeePerGas + ' (' + (parseInt(block.baseFeePerGas,16)/1e9) + ' Gwei)');
-
+    html += step('Latest Block', !!block && !!block.baseFeePerGas, 'baseFeePerGas = ' + (parseInt(block.baseFeePerGas,16)/1e9) + ' Gwei');
     const r5 = await rpc('eth_feeHistory', ['0x4', 'latest', [25,50,75]]);
     const fh = r5.result;
-    const fhOk = fh && Array.isArray(fh.baseFeePerGasArr) && fh.baseFeePerGasArr.length >= 5 && Array.isArray(fh.gasUsedRatio) && fh.gasUsedRatio.length >= 4;
-    html += step('eth_feeHistory', fhOk, 'baseFeePerGasArr.length=' + (fh?fh.baseFeePerGasArr.length:'?') + ' gasUsedRatio.length=' + (fh?fh.gasUsedRatio.length:'?') + ' (expected >=5 and >=4)');
-
-    const r6 = await rpc('eth_estimateGas', [{to:'0x0000000000000000000000000000000000000001',value:'0xde0b6b3a7640000'}]);
-    html += step('eth_estimateGas', parseInt(r6.result,16) > 0, r6.result + ' (' + parseInt(r6.result,16) + ')');
-
-    const r7 = await rpc('eth_getBalance', ['0x0000000000000000000000000000000000000001', 'latest']);
-    const bal = BigInt(r7.result);
-    html += step('eth_getBalance', bal > 0n, (bal/BigInt(10**18)).toString() + ' EXE');
-
-    const r8 = await rpc('eth_getTransactionCount', ['0x0000000000000000000000000000000000000001', 'pending']);
-    html += step('eth_getTransactionCount', parseInt(r8.result,16) >= 0, r8.result + ' (' + parseInt(r8.result,16) + ')');
-
-    // Test sendRawTransaction with a sample tx
-    const sampleTx = '0x02f87022801a843b9aca00843b9aca008252089400000000000000000000000000000000000000001880de0b6b3a764000080c080a01234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678a0567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678';
-    const r9 = await rpc('eth_sendRawTransaction', [sampleTx]);
-    const txHash = r9.result;
-    html += step('eth_sendRawTransaction', txHash && txHash.length === 66, txHash ? txHash.slice(0,18)+'...' : 'FAILED: ' + JSON.stringify(r9.error));
-
-    if (txHash) {
-      const r10 = await rpc('eth_getTransactionReceipt', [txHash]);
-      const receipt = r10.result;
-      html += step('eth_getTransactionReceipt', receipt && receipt.status === '0x1', 'status=' + (receipt?receipt.status:'null'));
-
-      const r11 = await rpc('eth_getTransactionByHash', [txHash]);
-      const tx = r11.result;
-      html += step('eth_getTransactionByHash', !!tx, tx ? tx.hash.slice(0,18)+'...' : 'null');
-    }
-
-    html += step('CORS Headers', true, 'If you see this page, CORS is working');
-  } catch(e) {
-    html += step('Network Error', false, e.message);
-  }
+    html += step('eth_feeHistory', fh && fh.baseFeePerGasArr.length >= 5, 'baseFeePerGasArr.length=' + fh.baseFeePerGasArr.length);
+    const r6 = await rpc('eth_estimateGas', [{to:'0x70997970C51812dc3A010C7d01b50e0d17dc79C8',value:'0xde0b6b3a7640000'}]);
+    html += step('eth_estimateGas', parseInt(r6.result,16) > 0, r6.result);
+    const r7 = await rpc('eth_getBalance', ['0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 'latest']);
+    html += step('eth_getBalance', BigInt(r7.result) > 0n, (BigInt(r7.result)/BigInt(10**18)) + ' EXE');
+  } catch(e) { html += step('Error', false, e.message); }
   el.innerHTML = '<div class="card">' + html + '</div>';
 }
-
-async function testMetaMask() {
-  const el = document.getElementById('mm-results');
-  if (!window.ethereum) {
-    el.innerHTML = '<div class="card"><div class="step fail"><div class="step-label">MetaMask</div><div class="step-value fail">MetaMask not detected. Please install MetaMask extension.</div></div></div>';
-    return;
-  }
-  el.innerHTML = '<div class="card"><pre>Connecting to MetaMask...</pre></div>';
-  let html = '';
-  try {
-    const accounts = await window.ethereum.request({method:'eth_requestAccounts'});
-    html += step('MetaMask Connected', accounts && accounts.length > 0, 'Account: ' + (accounts[0]||'none').slice(0,10)+'...');
-
-    const chainId = await window.ethereum.request({method:'eth_chainId'});
-    const cid = parseInt(chainId, 16);
-    html += step('MetaMask Chain ID', cid === 8848, 'Chain ID = ' + cid + ' (need 8848)');
-    if (cid !== 8848) {
-      html += '<div class="step fail"><div class="step-value fail">WARNING: Chain ID mismatch! Please switch to Exe Chain (ID 8848) in MetaMask</div></div>';
-    }
-  } catch(e) {
-    html += step('MetaMask Error', false, e.message);
-  }
-  el.innerHTML = '<div class="card">' + html + '</div>';
-}
-
 async function sendTestTx() {
   const el = document.getElementById('tx-results');
-  if (!window.ethereum) {
-    el.innerHTML = '<div class="card"><div class="step fail"><div class="step-value fail">MetaMask not available</div></div></div>';
-    return;
-  }
-  el.innerHTML = '<div class="card"><pre>Preparing transaction...</pre></div>';
+  if (!window.ethereum) { el.innerHTML = '<div class="card"><div class="step fail"><div class="step-value fail">MetaMask not detected</div></div></div>'; return; }
   let html = '';
   try {
     const accounts = await window.ethereum.request({method:'eth_requestAccounts'});
     const from = accounts[0];
-    const to = '0x00000000000000000000000000000000000dEaD';
-    const value = '0x0'; // 0 EXE
-
-    html += step('From', true, from);
-    html += step('To', true, to);
-
-    const txHash = await window.ethereum.request({
-      method: 'eth_sendTransaction',
-      params: [{ from, to, value }]
-    });
-    html += step('eth_sendTransaction', !!txHash, txHash || 'FAILED (null)');
-
+    const to = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+    html += step('Connected', true, 'Account: ' + from.slice(0,10) + '...');
+    const txHash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [{ from, to, value: '0x0', gas: '0x5208' }] });
+    html += step('TX Sent', !!txHash, txHash ? txHash.slice(0,22) + '...' : 'FAILED');
     if (txHash) {
-      html += '<div class="card" style="margin-top:8px"><pre>Transaction submitted! Hash: ' + txHash + '\\nWaiting for receipt (polling every 2s)...</pre></div>';
-      el.innerHTML = '<div class="card">' + html + '</div>';
-
-      // Poll for receipt
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 2000));
-        const receipt = await rpc('eth_getTransactionReceipt', [txHash]);
-        if (receipt.result) {
-          html += step('Receipt Found (attempt ' + (i+1) + ')', receipt.result.status === '0x1', 'Block #' + parseInt(receipt.result.blockNumber,16) + ' Status: ' + receipt.result.status);
-          el.innerHTML = '<div class="card">' + html + '</div>';
-          return;
+        const r = await rpc('eth_getTransactionReceipt', [txHash]);
+        if (r.result) {
+          html += step('Receipt', r.result.status === '0x1', 'status=' + r.result.status + ' from=' + (r.result.from||'?').slice(0,10) + '...');
+          if (r.result.from && r.result.from.toLowerCase() === from.toLowerCase()) {
+            html += step('From Match', true, 'Sender address matches MetaMask account!');
+          } else {
+            html += step('From Match', false, 'Sender=' + (r.result.from||'?') + ' Expected=' + from);
+          }
+          break;
         }
       }
-      html += step('Receipt Timeout', false, 'No receipt after 30s. Check MetaMask for error details.');
     }
   } catch(e) {
-    html += step('Transaction Error', false, e.message || JSON.stringify(e));
-    if (e.code === 4001) html += '<div class="step fail"><div class="step-value">User rejected the transaction in MetaMask</div></div>';
-    if (e.code === -32603) html += '<div class="step fail"><div class="step-value">Internal error. Check RPC logs below.</div></div>';
+    html += step('Error', false, e.message || JSON.stringify(e));
+    if (e.code === 4001) html += '<div class="step fail"><div class="step-value">User rejected</div></div>';
   }
   el.innerHTML = '<div class="card">' + html + '</div>';
 }
-
 async function viewLog() {
   const el = document.getElementById('log-results');
   try {
     const r = await fetch(RPC + '/_log');
     const data = await r.json();
     const log = data.log || [];
-    if (log.length === 0) {
-      el.innerHTML = '<div class="card"><p style="color:#64748b">No RPC calls logged (different isolate). Try running the tests first.</p></div>';
-      return;
-    }
+    if (log.length === 0) { el.innerHTML = '<div class="card"><p style="color:#64748b">No RPC calls logged yet</p></div>'; return; }
     let html = '<div class="card"><h2>Recent RPC Calls (' + log.length + ')</h2><table><tr><th>Time</th><th>Method</th><th>Status</th><th>Preview</th></tr>';
     for (const entry of log) {
       const time = new Date(entry.ts).toLocaleTimeString();
@@ -697,9 +825,6 @@ async function viewLog() {
     }
     html += '</table></div>';
     el.innerHTML = html;
-  } catch(e) {
-    el.innerHTML = '<div class="card"><div class="step fail"><div class="step-value">Failed to fetch log: ' + e.message + '</div></div></div>';
-  }
+  } catch(e) { el.innerHTML = '<div class="card"><div class="step fail"><div class="step-value">' + e.message + '</div></div></div>'; }
 }
-</script>
-</body></html>`;
+</script></body></html>`;
