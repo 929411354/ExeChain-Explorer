@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+
+// solc is loaded dynamically from CDN to avoid bundling issues in static export
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -66,6 +68,93 @@ function hexToNumber(hex: string): number {
 function hexToBigInt(hex: string): bigint {
   if (!hex || hex === '0x') return 0n;
   return BigInt(hex);
+}
+
+// ============================================================================
+// LOCALSTORAGE VERIFIED CONTRACTS
+// ============================================================================
+const LS_KEY = 'exechain_verified_contracts';
+
+interface VerifiedContractData {
+  address: string;
+  name: string;
+  compiler: string;
+  version: string;
+  optimization: number;
+  sourceCode: string;
+  abi: unknown;
+  bytecode: string;
+  constructorArguments: string | null;
+  createdAt: string;
+}
+
+function getVerifiedContracts(): Record<string, VerifiedContractData> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function getVerifiedContract(address: string): VerifiedContractData | null {
+  const contracts = getVerifiedContracts();
+  return contracts[address.toLowerCase()] || null;
+}
+
+function saveVerifiedContract(data: VerifiedContractData): void {
+  const contracts = getVerifiedContracts();
+  contracts[data.address.toLowerCase()] = data;
+  localStorage.setItem(LS_KEY, JSON.stringify(contracts));
+}
+
+// Normalize bytecode for comparison (remove library placeholders)
+function normalizeBytecode(code: string): string {
+  if (!code || code === '0x') return '';
+  return code.replace(/__\$[a-fA-F0-9]{34}\$__\$/g, '0'.repeat(40));
+}
+
+// ============================================================================
+// SOLC CDN LOADER
+// ============================================================================
+const solcCache: Record<string, unknown> = {};
+
+async function loadSolc(version: string): Promise<(input: string) => string> {
+  if (solcCache[version]) return solcCache[version] as (input: string) => string;
+
+  return new Promise((resolve, reject) => {
+    try {
+      const script = document.createElement('script');
+      script.src = `https://binaries.soliditylang.org/bin/soljson-${version}.js`;
+      script.onload = () => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const solcInstance = (window as any)[`soljson-${version}`];
+          if (!solcInstance) {
+            reject(new Error(`Failed to load solc ${version}`));
+            return;
+          }
+          const compiler = solcInstance.cwrap
+            ? (input: string) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const solcMod = (window as any)[`soljson-${version}`];
+                const cb = (_filename: string, contents: string) => contents;
+                const inputStr = JSON.stringify({ ...JSON.parse(input) });
+                const ret = solcMod.cwrap('compile', 'string', 'string, number')(inputStr, 0);
+                return ret;
+              }
+            : solcInstance;
+          solcCache[version] = compiler;
+          resolve(compiler);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      script.onerror = () => reject(new Error(`Failed to load solc ${version} from CDN`));
+      document.head.appendChild(script);
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 function weiToExe(wei: bigint | string): string {
@@ -1821,25 +1910,19 @@ function AddressDetailPage({ address }: { address: string }) {
   } | null>(null);
   const [loadingContract, setLoadingContract] = useState(true);
 
-  // Fetch verified contract info
+  // Fetch verified contract info from localStorage
   useEffect(() => {
     if (!address) return;
-    let mounted = true;
     setLoadingContract(true);
-    fetch(`/api/verify-contract?address=${address.toLowerCase()}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (mounted) {
-          if (data.success && data.contract?.isVerified) {
-            setVerifiedContract(data.contract);
-          }
-          setLoadingContract(false);
-        }
-      })
-      .catch(() => {
-        if (mounted) setLoadingContract(false);
-      });
-    return () => { mounted = false; };
+    // Use setTimeout to avoid blocking render
+    const timer = setTimeout(() => {
+      const stored = getVerifiedContract(address);
+      if (stored) {
+        setVerifiedContract(stored);
+      }
+      setLoadingContract(false);
+    }, 50);
+    return () => clearTimeout(timer);
   }, [address]);
 
   useEffect(() => {
@@ -2136,27 +2219,140 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
     setResult(null);
 
     try {
-      const res = await fetch('/api/verify-contract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          address: address.trim(),
-          sourceCode,
-          contractName: contractName.trim(),
-          compilerVersion,
-          optimizationUsed,
-          optimizationRuns: parseInt(optimizationRuns) || 200,
-          constructorArguments: constructorArguments.trim() || undefined,
-        }),
+      const addr = address.trim().toLowerCase();
+
+      // 1. Get deployed bytecode from chain via RPC
+      const deployedBytecode = await rpcCall('eth_getCode', [addr, 'latest']) as string;
+      if (!deployedBytecode || deployedBytecode === '0x' || deployedBytecode === '0x0') {
+        setResult({ success: false, message: 'No contract bytecode found at this address.' });
+        setLoading(false);
+        return;
+      }
+
+      // 2. Load solc from CDN and compile source code
+      let compiledBytecode = '';
+      let compiledAbi: unknown[] = [];
+
+      // Map solc version to the binary filename version
+      const versionMap: Record<string, string> = {
+        '0.8.24': 'v0.8.24+commit.e11b9ed9',
+        '0.8.20': 'v0.8.20+commit.a1b79de6',
+        '0.8.17': 'v0.8.17+commit.8df45f5f',
+        '0.8.0': 'v0.8.0+commit.c7dfd78e',
+        '0.7.6': 'v0.7.6+commit.7338295f',
+        '0.6.12': 'v0.6.12+commit.27d51765',
+        '0.5.17': 'v0.5.17+commit.d19bba13',
+        '0.4.24': 'v0.4.24+commit.e67f0147',
+      };
+      const binaryVersion = versionMap[compilerVersion] || `v${compilerVersion}+commit.unknown`;
+      
+      const compile = await loadSolc(binaryVersion);
+
+      const solcInput = {
+        language: 'Solidity',
+        sources: {
+          'Contract.sol': {
+            content: sourceCode,
+          },
+        },
+        settings: {
+          outputSelection: {
+            '*': {
+              '*': ['*'],
+            },
+          },
+          optimizer: {
+            enabled: !!optimizationUsed,
+            runs: optimizationRuns ? parseInt(optimizationRuns) : 200,
+          },
+        },
+      };
+
+      const inputJSON = JSON.stringify(solcInput);
+      const output = JSON.parse(compile(inputJSON));
+
+      if (output.errors) {
+        const errors = output.errors.filter((e: { severity: string }) => e.severity === 'error');
+        if (errors.length > 0) {
+          setResult({
+            success: false,
+            message: 'Compilation failed',
+            details: errors.map((e: { formattedMessage?: string; message?: string }) => e.formattedMessage || e.message),
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Find the contract in the output
+      const contractFile = output.contracts?.['Contract.sol'];
+      if (!contractFile) {
+        setResult({ success: false, message: `No contracts found in source. Check your Solidity code.` });
+        setLoading(false);
+        return;
+      }
+
+      let targetContract = contractFile[contractName.trim()];
+      if (!targetContract) {
+        // Try to find any contract
+        const contractKeys = Object.keys(contractFile);
+        if (contractKeys.length === 0) {
+          setResult({ success: false, message: `Contract "${contractName}" not found in compiled output.` });
+          setLoading(false);
+          return;
+        }
+        targetContract = contractFile[contractKeys[0]];
+      }
+
+      compiledBytecode = (targetContract as { evm?: { deployedBytecode?: { object?: string } } }).evm?.deployedBytecode?.object || '';
+      compiledAbi = (targetContract as { abi?: unknown[] }).abi || [];
+
+      if (!compiledBytecode) {
+        setResult({ success: false, message: 'Compilation succeeded but no bytecode was produced.' });
+        setLoading(false);
+        return;
+      }
+
+      // 3. Normalize and compare bytecodes
+      const normalizedDeployed = normalizeBytecode(deployedBytecode.toLowerCase());
+      const normalizedCompiled = normalizeBytecode('0x' + compiledBytecode.toLowerCase());
+
+      let fullCompiledBytecode = normalizedCompiled;
+      if (constructorArguments && constructorArguments.trim()) {
+        fullCompiledBytecode = normalizedCompiled + constructorArguments.trim().replace(/^0x/, '');
+      }
+
+      if (fullCompiledBytecode !== normalizedDeployed) {
+        setResult({
+          success: false,
+          message: 'Bytecode mismatch - the compiled bytecode does not match the on-chain bytecode. Please check compiler version, optimization settings, and constructor arguments.',
+          details: [
+            `Compiled length: ${fullCompiledBytecode.length}`,
+            `Deployed length: ${normalizedDeployed.length}`,
+          ],
+        });
+        setLoading(false);
+        return;
+      }
+
+      // 4. Save to localStorage
+      saveVerifiedContract({
+        address: addr,
+        name: contractName.trim(),
+        compiler: 'solc',
+        version: output.version || compilerVersion,
+        optimization: optimizationUsed ? (parseInt(optimizationRuns) || 200) : 0,
+        sourceCode,
+        abi: compiledAbi,
+        bytecode: deployedBytecode,
+        constructorArguments: constructorArguments.trim() || null,
+        createdAt: new Date().toISOString(),
       });
-      const data = await res.json();
-      setResult({
-        success: data.success,
-        message: data.error || data.message,
-        details: data.details,
-      });
-    } catch {
-      setResult({ success: false, message: 'Network error. Please try again.' });
+
+      setResult({ success: true, message: 'Contract verified successfully! Source code published to local storage.' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setResult({ success: false, message: `Verification error: ${msg}` });
     } finally {
       setLoading(false);
     }
@@ -2174,7 +2370,7 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500 mb-6">
-            Verify and publish your contract source code on {CHAIN_NAME} Explorer. The compiled bytecode will be compared against the deployed bytecode on-chain.
+            Verify and publish your contract source code on {CHAIN_NAME} Explorer. The compiled bytecode will be compared against the deployed bytecode on-chain. Verified contracts are stored in your browser's local storage.
           </p>
 
           {/* Contract Address */}
