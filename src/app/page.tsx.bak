@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
+// solc is loaded dynamically from CDN to avoid bundling issues in static export
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -28,8 +29,7 @@ import {
   Search, Copy, Check, ChevronDown, Fuel, Box, ArrowLeftRight, Clock,
   Home, Blocks, FileText, Activity, ArrowRight, ExternalLink, Menu, X,
   Cuboid, Hash, Wallet, Cpu, Zap, TrendingUp, CircleDot, AlertCircle,
-  ShieldCheck, FileCode2, Loader2, Code2, Coins, Image, Trophy, ScrollText,
-  BookOpen, PenTool, Landmark,
+  ShieldCheck, FileCode2, Loader2, Code2,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -45,66 +45,6 @@ const NATIVE_TOKEN = 'EXE';
 const BLOCK_TIME_MS = 5000;
 const EXE_PRICE = 1.0;
 const TOTAL_SUPPLY_EXE = 100_000_000;
-
-// ERC-20 function selectors
-const ERC20_NAME_SIG = '0x06fdde03';
-const ERC20_SYMBOL_SIG = '0x95d89b41';
-const ERC20_DECIMALS_SIG = '0x313ce567';
-const ERC20_TOTALSUPPLY_SIG = '0x18160ddd';
-const ERC20_BALANCEOF_SIG = '0x70a08231';
-const ERC20_APPROVE_SIG = '0x095ea7b3';
-const ERC20_TRANSFER_SIG = '0xa9059cbb';
-const ERC20_TRANSFERFROM_SIG = '0x23b872dd';
-
-// ERC-721
-const ERC721_INTERFACE_ID = '0x80ac58cd';
-const ERC721_SUPPORTSINTERFACE_SIG = '0x01ffc9a7';
-const ERC721_TOKENURI_SIG = '0xc87b56dd';
-const ERC721_TOKENOFOWNERBYINDEX_SIG = '0x7f583870';
-const ERC721_TOKENBYINDEX_SIG = '0x4f6ccce7';
-const ERC721_BALANCEOF_SIG = '0x70a08231';
-
-// Event topic hashes
-const TRANSFER_EVENT_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
-const APPROVAL_EVENT_TOPIC = '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925';
-
-// Known method signatures for decoding
-const KNOWN_METHODS: Record<string, string> = {
-  '0xa9059cbb': 'transfer',
-  '0x095ea7b3': 'approve',
-  '0x23b872dd': 'transferFrom',
-  '0x38ed1739': 'swap',
-  '0x7ff36ab5': 'swapExactETHForTokens',
-  '0x18cbafe5': 'swapExactTokensForTokens',
-  '0xe8e33700': 'addLiquidity',
-  '0xf305d719': 'addLiquidityETH',
-  '0x2e1a7d4d': 'withdraw',
-  '0xd0e30db0': 'deposit',
-  '0x06fdde03': 'name',
-  '0x95d89b41': 'symbol',
-  '0x313ce567': 'decimals',
-  '0x18160ddd': 'totalSupply',
-  '0x70a08231': 'balanceOf',
-  '0x01ffc9a7': 'supportsInterface',
-  '0xc87b56dd': 'tokenURI',
-  '0x7f583870': 'tokenOfOwnerByIndex',
-  '0x4f6ccce7': 'tokenByIndex',
-  '0xdd62ed3e': 'allowance',
-  '0x39509351': 'increaseAllowance',
-  '0xa457c2d7': 'decreaseAllowance',
-  '0x40c10f19': 'mint',
-  '0x42966c68': 'burn',
-  '0xa217fddf': 'DEFAULT_ADMIN_ROLE',
-};
-
-const KNOWN_EVENTS: Record<string, string> = {
-  [TRANSFER_EVENT_TOPIC]: 'Transfer',
-  [APPROVAL_EVENT_TOPIC]: 'Approval',
-  '0x8be0079ec52a0e4aaa5704b130ded37188b5407e0e9e45c21c8b8d82f55e3460': 'OwnershipTransferred',
-  '0x34fcbac00c1b92bc68e7ef0a71e0e4e9106bb8b1c5c0c886c4a4b9e4c78b2b8c': 'Paused',
-  '0x5c975abb2ef2272708b0c9ee82187b1d34b56bb8ee085081782564b4b6b9ee6ac': 'Unpaused',
-};
-
 
 // ============================================================================
 // RPC UTILITIES
@@ -130,16 +70,10 @@ function hexToBigInt(hex: string): bigint {
   return BigInt(hex);
 }
 
-async function ethCall(to: string, data: string): Promise<string> {
-  return rpcCall('eth_call', [{ to, data }, 'latest']);
-}
-
 // ============================================================================
-// LOCALSTORAGE HELPERS
+// LOCALSTORAGE VERIFIED CONTRACTS
 // ============================================================================
 const LS_KEY = 'exechain_verified_contracts';
-const LS_TOKENS_KEY = 'exechain_discovered_tokens';
-const LS_NFTS_KEY = 'exechain_discovered_nfts';
 
 interface VerifiedContractData {
   address: string;
@@ -152,25 +86,6 @@ interface VerifiedContractData {
   bytecode: string;
   constructorArguments: string | null;
   createdAt: string;
-}
-
-interface TokenInfo {
-  address: string;
-  name: string;
-  symbol: string;
-  decimals: number;
-  totalSupply: string;
-  holderCount: number;
-  discoveredAt: string;
-  type: 'ERC20' | 'ERC721';
-}
-
-interface NFTCollectionInfo {
-  address: string;
-  name: string;
-  symbol: string;
-  tokenCount: number;
-  discoveredAt: string;
 }
 
 function getVerifiedContracts(): Record<string, VerifiedContractData> {
@@ -192,34 +107,7 @@ function saveVerifiedContract(data: VerifiedContractData): void {
   localStorage.setItem(LS_KEY, JSON.stringify(contracts));
 }
 
-function getDiscoveredTokens(): Record<string, TokenInfo> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(LS_TOKENS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
-}
-
-function saveDiscoveredToken(token: TokenInfo): void {
-  const tokens = getDiscoveredTokens();
-  tokens[token.address.toLowerCase()] = token;
-  localStorage.setItem(LS_TOKENS_KEY, JSON.stringify(tokens));
-}
-
-function getDiscoveredNFTs(): Record<string, NFTCollectionInfo> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(LS_NFTS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
-}
-
-function saveDiscoveredNFT(nft: NFTCollectionInfo): void {
-  const nfts = getDiscoveredNFTs();
-  nfts[nft.address.toLowerCase()] = nft;
-  localStorage.setItem(LS_NFTS_KEY, JSON.stringify(nfts));
-}
-
+// Normalize bytecode for comparison (remove library placeholders)
 function normalizeBytecode(code: string): string {
   if (!code || code === '0x') return '';
   return code.replace(/__\$[a-fA-F0-9]{34}\$__\$/g, '0'.repeat(40));
@@ -249,6 +137,7 @@ async function loadSolc(version: string): Promise<(input: string) => string> {
             ? (input: string) => {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const solcMod = (window as any)[`soljson-${version}`];
+                const cb = (_filename: string, contents: string) => contents;
                 const inputStr = JSON.stringify({ ...JSON.parse(input) });
                 const ret = solcMod.cwrap('compile', 'string', 'string, number')(inputStr, 0);
                 return ret;
@@ -268,9 +157,6 @@ async function loadSolc(version: string): Promise<(input: string) => string> {
   });
 }
 
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
 function weiToExe(wei: bigint | string): string {
   const value = typeof wei === 'string' ? BigInt(wei) : wei;
   const divisor = 10n ** 18n;
@@ -308,28 +194,6 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-function formatTokenBalance(rawValue: string, decimals: number): string {
-  if (!rawValue || rawValue === '0x' || rawValue === '0x0') return '0';
-  const value = BigInt(rawValue);
-  if (decimals === 0) return value.toLocaleString();
-  const divisor = 10n ** BigInt(decimals);
-  const integerPart = value / divisor;
-  const fractionalPart = value % divisor;
-  if (fractionalPart === 0n) return integerPart.toLocaleString();
-  const fracStr = fractionalPart.toString().padStart(decimals, '0').replace(/0+$/, '').slice(0, 6);
-  return `${integerPart.toLocaleString()}.${fracStr}`;
-}
-
-function hexToAscii(hex: string): string {
-  if (!hex || hex === '0x') return '';
-  try {
-    const bytes = (hex.startsWith('0x') ? hex.slice(2) : hex).match(/.{1,2}/g) || [];
-    return bytes.map((b) => String.fromCharCode(parseInt(b, 16))).join('').replace(/\0+$/, '');
-  } catch {
-    return '';
-  }
-}
-
 function parseSearchInput(input: string): string {
   const trimmed = input.trim();
   if (/^0x[a-fA-F0-9]{64}$/.test(trimmed)) {
@@ -355,191 +219,6 @@ function navigateTo(hash: string) {
 function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text).catch(() => { /* ignore */ });
 }
-
-function topicToAddress(topic: string): string {
-  if (!topic || topic === '0x') return '0x0000000000000000000000000000000000000000';
-  const padded = topic.replace('0x', '').padStart(64, '0');
-  return '0x' + padded.slice(24);
-}
-
-function getGradientFromAddress(address: string): string {
-  const h1 = parseInt(address.slice(2, 6), 16) % 360;
-  const h2 = (h1 + 40) % 360;
-  return `linear-gradient(135deg, hsl(${h1}, 70%, 55%), hsl(${h2}, 80%, 45%))`;
-}
-
-
-// ============================================================================
-// TOKEN / NFT DETECTION FUNCTIONS
-// ============================================================================
-async function detectToken(address: string): Promise<TokenInfo | null> {
-  try {
-    const code = await rpcCall('eth_getCode', [address, 'latest']);
-    if (!code || code === '0x' || code === '0x0') return null;
-
-    const [nameHex, symbolHex, decimalsHex, totalSupplyHex] = await Promise.all([
-      ethCall(address, ERC20_NAME_SIG).catch(() => null),
-      ethCall(address, ERC20_SYMBOL_SIG).catch(() => null),
-      ethCall(address, ERC20_DECIMALS_SIG).catch(() => null),
-      ethCall(address, ERC20_TOTALSUPPLY_SIG).catch(() => null),
-    ]);
-
-    if (!nameHex && !symbolHex) return null;
-
-    const name = hexToAscii(nameHex || '0x');
-    const symbol = hexToAscii(symbolHex || '0x');
-    if (!name && !symbol) return null;
-
-    const decimals = decimalsHex ? hexToNumber(decimalsHex) : 18;
-    const totalSupply = totalSupplyHex || '0x0';
-
-    // Check if ERC-721
-    const paddedInterfaceId = '0x' + ERC721_INTERFACE_ID.slice(2).padStart(64, '0');
-    let isERC721 = false;
-    try {
-      const result = await ethCall(address, ERC721_SUPPORTSINTERFACE_SIG + paddedInterfaceId.slice(2));
-      if (result && result !== '0x' && result.length >= 66) {
-        const lastByte = result.slice(result.length - 2);
-        if (parseInt(lastByte, 16) === 1) isERC721 = true;
-      }
-    } catch { /* not ERC-721 */ }
-
-    const token: TokenInfo = {
-      address,
-      name: name || 'Unknown Token',
-      symbol: symbol || '???',
-      decimals: isERC721 ? 0 : decimals,
-      totalSupply,
-      holderCount: 0,
-      discoveredAt: new Date().toISOString(),
-      type: isERC721 ? 'ERC721' : 'ERC20',
-    };
-
-    // Save to localStorage
-    saveDiscoveredToken(token);
-    return token;
-  } catch {
-    return null;
-  }
-}
-
-async function getTokenBalance(tokenAddress: string, walletAddress: string, decimals: number): Promise<string> {
-  try {
-    const paddedAddress = '0x' + walletAddress.replace('0x', '').padStart(64, '0');
-    const result = await ethCall(tokenAddress, ERC20_BALANCEOF_SIG + paddedAddress.slice(2));
-    return formatTokenBalance(result, decimals);
-  } catch {
-    return '0';
-  }
-}
-
-interface RpcLog {
-  address: string;
-  topics: string[];
-  data: string;
-  blockNumber: string;
-  transactionHash: string;
-  transactionIndex: string;
-  blockHash: string;
-  logIndex: string;
-  removed: boolean;
-}
-
-interface DecodedEvent {
-  name: string;
-  contract: string;
-  topics: string[];
-  params: { name: string; value: string; type: string }[];
-  raw: RpcLog;
-}
-
-function decodeLogs(logs: unknown[], knownTokens?: Record<string, TokenInfo>): DecodedEvent[] {
-  const decoded: DecodedEvent[] = [];
-  if (!logs || !Array.isArray(logs)) return decoded;
-
-  for (const log of logs) {
-    const l = log as RpcLog;
-    if (!l || !l.topics || !l.topics[0]) continue;
-
-    const topic0 = l.topics[0];
-    const eventName = KNOWN_EVENTS[topic0];
-    const tokenInfo = knownTokens?.[l.address?.toLowerCase()];
-    const contractLabel = tokenInfo ? `${tokenInfo.name} (${shortHash(l.address)})` : shortHash(l.address);
-    const params: { name: string; value: string; type: string }[] = [];
-
-    if (topic0 === TRANSFER_EVENT_TOPIC) {
-      const from = topicToAddress(l.topics[1] || '');
-      const to = topicToAddress(l.topics[2] || '');
-      params.push({ name: 'from', value: from, type: 'address' });
-      params.push({ name: 'to', value: to, type: 'address' });
-
-      if (l.data && l.data !== '0x' && l.data.length > 2) {
-        if (tokenInfo && tokenInfo.type === 'ERC20') {
-          params.push({ name: 'value', value: formatTokenBalance(l.data, tokenInfo.decimals) + ` ${tokenInfo.symbol}`, type: 'uint256' });
-        } else if (tokenInfo && tokenInfo.type === 'ERC721') {
-          const tokenId = BigInt(l.data).toString();
-          params.push({ name: 'tokenId', value: tokenId, type: 'uint256' });
-        } else {
-          params.push({ name: 'value', value: l.data, type: 'uint256' });
-        }
-      }
-
-      decoded.push({
-        name: eventName || 'Transfer',
-        contract: l.address,
-        topics: l.topics,
-        params,
-        raw: l,
-      });
-    } else if (topic0 === APPROVAL_EVENT_TOPIC) {
-      const owner = topicToAddress(l.topics[1] || '');
-      const spender = topicToAddress(l.topics[2] || '');
-      params.push({ name: 'owner', value: owner, type: 'address' });
-      params.push({ name: 'spender', value: spender, type: 'address' });
-      if (l.data && l.data !== '0x') {
-        params.push({ name: 'value', value: l.data, type: 'uint256' });
-      }
-      decoded.push({ name: 'Approval', contract: l.address, topics: l.topics, params, raw: l });
-    } else {
-      decoded.push({
-        name: eventName || `Event(${topic0.slice(0, 10)}...)`,
-        contract: l.address,
-        topics: l.topics,
-        params: [],
-        raw: l,
-      });
-    }
-  }
-  return decoded;
-}
-
-function decodeInputData(input: string, abi: unknown): { method: string; params: { name: string; value: string; type: string }[] } {
-  if (!input || input === '0x' || input.length < 10) return { method: '', params: [] };
-
-  const sig = input.slice(0, 10);
-  const data = input.slice(10);
-  const methodName = KNOWN_METHODS[sig] || sig;
-
-  const params: { name: string; value: string; type: string }[] = [];
-
-  // Try to decode known methods
-  if (sig === ERC20_TRANSFER_SIG || sig === ERC20_APPROVE_SIG || sig === ERC20_TRANSFERFROM_SIG || sig === ERC20_BALANCEOF_SIG) {
-    const names = sig === ERC20_BALANCEOF_SIG ? ['address'] : sig === ERC20_TRANSFERFROM_SIG ? ['from', 'to', 'value'] : ['address', 'value'];
-    for (let i = 0; i < names.length; i++) {
-      const chunk = data.slice(i * 64, (i + 1) * 64);
-      if (chunk.length === 64) {
-        if (names[i] === 'address') {
-          params.push({ name: names[i], value: topicToAddress('0x' + chunk), type: 'address' });
-        } else {
-          params.push({ name: names[i], value: BigInt('0x' + chunk).toString(), type: 'uint256' });
-        }
-      }
-    }
-  }
-
-  return { method: methodName, params };
-}
-
 
 // ============================================================================
 // TYPES
@@ -599,7 +278,7 @@ interface RpcReceipt {
   cumulativeGasUsed: string;
   gasUsed: string;
   contractAddress: string | null;
-  logs: RpcLog[];
+  logs: unknown[];
   logsBloom: string;
   status: string;
   effectiveGasPrice: string;
@@ -634,17 +313,6 @@ interface TxRow {
   status: 'success' | 'failed';
   fee: string;
   type: string;
-}
-
-// ABI item for contract interaction
-interface AbiItem {
-  type: string;
-  name: string;
-  inputs: { name: string; type: string }[];
-  outputs?: { name: string; type: string }[];
-  stateMutability?: string;
-  constant?: boolean;
-  payable?: boolean;
 }
 
 // ============================================================================
@@ -845,7 +513,6 @@ function useAddress(address: string | null) {
   return { balance, txCount, loading, error };
 }
 
-
 // ============================================================================
 // BATCH BLOCKS FETCHER
 // ============================================================================
@@ -896,7 +563,19 @@ function buildTxRow(
   const input = tx.input || '0x';
   if (input.length > 10 && input !== '0x') {
     const sig = input.slice(0, 10);
-    method = KNOWN_METHODS[sig] || `${sig}`;
+    const knownMethods: Record<string, string> = {
+      '0xa9059cbb': 'Transfer',
+      '0x095ea7b3': 'Approve',
+      '0x23b872dd': 'TransferFrom',
+      '0x38ed1739': 'Swap',
+      '0x7ff36ab5': 'SwapExactETH',
+      '0x18cbafe5': 'SwapExactTokens',
+      '0xe8e33700': 'AddLiquidity',
+      '0xf305d719': 'AddLiquidityETH',
+      '0x2e1a7d4d': 'Withdraw',
+      '0xd0e30db0': 'Deposit',
+    };
+    method = knownMethods[sig] || `${sig}`;
   }
 
   return {
@@ -971,29 +650,6 @@ function CardSkeleton() {
 }
 
 // ============================================================================
-// TOKEN LOGO COMPONENT
-// ============================================================================
-function TokenLogo({ symbol, address, size = 24 }: { symbol: string; address: string; size?: number }) {
-  const initial = (symbol || '?')[0]?.toUpperCase() || '?';
-  const gradient = getGradientFromAddress(address);
-
-  return (
-    <div
-      className="rounded-full flex items-center justify-center text-white font-bold shrink-0"
-      style={{
-        width: size,
-        height: size,
-        fontSize: Math.max(size * 0.45, 10),
-        background: gradient,
-      }}
-    >
-      {initial}
-    </div>
-  );
-}
-
-
-// ============================================================================
 // NAVBAR
 // ============================================================================
 function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
@@ -1024,20 +680,11 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
     setMobileMenuOpen(false);
   }, [searchInput, searchFilter, onNavigate]);
 
-  const navItems = [
-    { hash: '#home', icon: Home, label: 'Home' },
-    { hash: '#blocks', icon: Blocks, label: 'Blocks' },
-    { hash: '#txs', icon: FileText, label: 'Transactions' },
-    { hash: '#tokens', icon: Coins, label: 'Tokens' },
-    { hash: '#nfts', icon: Image, label: 'NFTs' },
-    { hash: '#top-accounts', icon: Trophy, label: 'Top Accounts' },
-    { hash: '#verify-contract', icon: ShieldCheck, label: 'Verify Contract' },
-  ];
-
   return (
     <header className="sticky top-0 z-50 bg-[#13b5c1] shadow-md">
       <div className="max-w-[1400px] mx-auto px-4">
         <div className="flex items-center h-16 gap-4">
+          {/* Logo */}
           <button
             onClick={() => onNavigate('#home')}
             className="flex items-center gap-2 shrink-0"
@@ -1049,24 +696,42 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
           </button>
 
           {/* Desktop Nav */}
-          <nav className="hidden lg:flex items-center gap-0.5 ml-1 overflow-x-auto">
-            {navItems.map((item) => (
-              <button
-                key={item.hash}
-                onClick={() => onNavigate(item.hash)}
-                className="px-2.5 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap"
-              >
-                <item.icon className="w-3.5 h-3.5" />
-                {item.label}
-              </button>
-            ))}
+          <nav className="hidden md:flex items-center gap-1 ml-2">
+            <button
+              onClick={() => onNavigate('#home')}
+              className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <Home className="w-4 h-4" />
+              Home
+            </button>
+            <button
+              onClick={() => onNavigate('#blocks')}
+              className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <Blocks className="w-4 h-4" />
+              Blocks
+            </button>
+            <button
+              onClick={() => onNavigate('#txs')}
+              className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <FileText className="w-4 h-4" />
+              Transactions
+            </button>
+            <button
+              onClick={() => onNavigate('#verify-contract')}
+              className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Verify Contract
+            </button>
           </nav>
 
           {/* Search Bar */}
           <div className="flex-1 max-w-xl mx-auto flex">
             <div className="flex w-full bg-white rounded-lg overflow-hidden shadow-sm">
               <Select value={searchFilter} onValueChange={setSearchFilter}>
-                <SelectTrigger className="w-auto border-0 rounded-none bg-gray-50 border-r text-xs text-gray-600 h-10 min-w-[100px]">
+                <SelectTrigger className="w-auto border-0 rounded-none bg-gray-50 border-r text-xs text-gray-600 h-10 min-w-[110px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1096,7 +761,7 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
           {/* Mobile Menu Toggle */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden text-white p-2"
+            className="md:hidden text-white p-2"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -1104,17 +769,32 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
 
         {/* Mobile Nav */}
         {mobileMenuOpen && (
-          <div className="lg:hidden pb-3 border-t border-white/20 mt-1 pt-2">
-            <nav className="grid grid-cols-2 gap-1">
-              {navItems.map((item) => (
-                <button
-                  key={item.hash}
-                  onClick={() => { onNavigate(item.hash); setMobileMenuOpen(false); }}
-                  className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
-                >
-                  <item.icon className="w-4 h-4" /> {item.label}
-                </button>
-              ))}
+          <div className="md:hidden pb-3 border-t border-white/20 mt-1 pt-2">
+            <nav className="flex flex-col gap-1">
+              <button
+                onClick={() => { onNavigate('#home'); setMobileMenuOpen(false); }}
+                className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
+              >
+                <Home className="w-4 h-4" /> Home
+              </button>
+              <button
+                onClick={() => { onNavigate('#blocks'); setMobileMenuOpen(false); }}
+                className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
+              >
+                <Blocks className="w-4 h-4" /> Blocks
+              </button>
+              <button
+                onClick={() => { onNavigate('#txs'); setMobileMenuOpen(false); }}
+                className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4" /> Transactions
+              </button>
+              <button
+                onClick={() => { onNavigate('#verify-contract'); setMobileMenuOpen(false); }}
+                className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" /> Verify Contract
+              </button>
             </nav>
           </div>
         )}
@@ -1122,7 +802,6 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
     </header>
   );
 }
-
 
 // ============================================================================
 // GAS TRACKER COMPONENT
@@ -1549,7 +1228,6 @@ function SimplePagination({
   );
 }
 
-
 // ============================================================================
 // HOME PAGE
 // ============================================================================
@@ -1570,6 +1248,7 @@ function HomePage({ onNavigate }: { onNavigate: (hash: string) => void }) {
         setBlocks(latestBlocks);
         setLoadingBlocks(false);
 
+        // Get all tx hashes from all blocks
         const allTxHashes: string[] = [];
         for (const b of latestBlocks) {
           const blockHex = `0x${b.number.toString(16)}`;
@@ -1588,6 +1267,7 @@ function HomePage({ onNavigate }: { onNavigate: (hash: string) => void }) {
           if (allTxHashes.length >= 15) break;
         }
 
+        // Fetch tx details and receipts
         const uniqueHashes = [...new Set(allTxHashes)].slice(0, 15);
         const txPromises = uniqueHashes.map(async (hash) => {
           try {
@@ -1629,11 +1309,13 @@ function HomePage({ onNavigate }: { onNavigate: (hash: string) => void }) {
     return () => { mounted = false; };
   }, []);
 
+  // Auto-refresh
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 15000);
     return () => clearInterval(interval);
   }, []);
 
+  // Re-fetch on tick change
   useEffect(() => {
     let mounted = true;
     const refetch = async () => {
@@ -1648,7 +1330,10 @@ function HomePage({ onNavigate }: { onNavigate: (hash: string) => void }) {
 
   return (
     <div className="space-y-6">
+      {/* Stats Bar */}
       <StatsBar blockNumber={blockNumber} />
+
+      {/* Gas Tracker */}
       <Card className="border border-gray-200">
         <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <GasTracker />
@@ -1659,6 +1344,7 @@ function HomePage({ onNavigate }: { onNavigate: (hash: string) => void }) {
         </CardContent>
       </Card>
 
+      {/* Latest Blocks */}
       <Card className="border border-gray-200">
         <CardHeader className="pb-0">
           <div className="flex items-center justify-between">
@@ -1681,6 +1367,7 @@ function HomePage({ onNavigate }: { onNavigate: (hash: string) => void }) {
         </CardContent>
       </Card>
 
+      {/* Latest Transactions */}
       <Card className="border border-gray-200">
         <CardHeader className="pb-0">
           <div className="flex items-center justify-between">
@@ -1848,6 +1535,7 @@ function BlockDetailPage({ blockNumber }: { blockNumber: number }) {
 
   return (
     <div className="space-y-6">
+      {/* Overview */}
       <Card className="border border-gray-200">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
@@ -1895,6 +1583,7 @@ function BlockDetailPage({ blockNumber }: { blockNumber: number }) {
         </CardContent>
       </Card>
 
+      {/* Transactions */}
       <Card className="border border-gray-200">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
@@ -1938,8 +1627,11 @@ function TransactionsListPage() {
           const hexBlock = `0x${b.toString(16)}`;
           const fullBlock = await rpcCall('eth_getBlockByNumber', [hexBlock, true]);
           if (!fullBlock || !fullBlock.transactions) continue;
-          const txArray = Array.isArray(fullBlock.transactions) ? fullBlock.transactions : [fullBlock.transactions];
+          const txArray = Array.isArray(fullBlock.transactions)
+            ? fullBlock.transactions
+            : [fullBlock.transactions];
           const timestamp = hexToNumber(fullBlock.timestamp) * 1000;
+
           for (const txHashOrObj of txArray) {
             if (allTxRows.length >= perPage) break;
             try {
@@ -1948,7 +1640,9 @@ function TransactionsListPage() {
                 rpcCall('eth_getTransactionByHash', [hash]),
                 rpcCall('eth_getTransactionReceipt', [hash]),
               ]);
-              if (txData) allTxRows.push(buildTxRow(txData, receiptData, timestamp));
+              if (txData) {
+                allTxRows.push(buildTxRow(txData, receiptData, timestamp));
+              }
             } catch { /* skip */ }
           }
         } catch { /* skip */ }
@@ -1957,8 +1651,12 @@ function TransactionsListPage() {
     };
 
     fetchTxs().then((data) => {
-      if (mounted) { setTransactions(data); setLoading(false); }
+      if (mounted) {
+        setTransactions(data);
+        setLoading(false);
+      }
     });
+
     return () => { mounted = false; };
   }, [blockNumber, page]);
 
@@ -1985,25 +1683,29 @@ function TransactionsListPage() {
 }
 
 // ============================================================================
-// TRANSACTION DETAIL PAGE (Enhanced with Decoded Input & Event Logs)
+// TRANSACTION DETAIL PAGE
 // ============================================================================
 function TransactionDetailPage({ txHash }: { txHash: string }) {
   const { tx, receipt, loading, error } = useTransaction(txHash);
   const [blockTimestamp, setBlockTimestamp] = useState<number | null>(null);
-  const [knownTokens, setKnownTokens] = useState<Record<string, TokenInfo>>({});
 
   useEffect(() => {
     if (!tx?.blockNumber) return;
     rpcCall('eth_getBlockByNumber', [tx.blockNumber, false])
-      .then((block) => { if (block) setBlockTimestamp(hexToNumber(block.timestamp) * 1000); })
+      .then((block) => {
+        if (block) setBlockTimestamp(hexToNumber(block.timestamp) * 1000);
+      })
       .catch(() => {});
   }, [tx?.blockNumber]);
 
-  useEffect(() => {
-    setKnownTokens(getDiscoveredTokens());
-  }, []);
-
-  if (loading) return <div className="space-y-4"><CardSkeleton /><CardSkeleton /></div>;
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    );
+  }
 
   if (error || !tx) {
     return (
@@ -2021,26 +1723,10 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
   const feeWei = BigInt(gasPrice) * BigInt(gasUsed);
   const status = receipt && receipt.status === '0x1' ? 'success' : receipt ? 'failed' : 'success';
   const timestamp = blockTimestamp;
+
   const isContractCreation = !tx.to;
   const input = tx.input || '0x';
   const isSimpleTransfer = input === '0x' || input === '0x0';
-
-  // Decode input data
-  const decodedInput = useMemo(() => {
-    if (isSimpleTransfer || isContractCreation) return null;
-    // Try to get ABI from verified contract
-    if (tx.to) {
-      const vc = getVerifiedContract(tx.to);
-      if (vc?.abi) return decodeInputData(input, vc.abi);
-    }
-    return decodeInputData(input, null);
-  }, [input, tx.to, isSimpleTransfer, isContractCreation]);
-
-  // Decode event logs
-  const decodedLogs = useMemo(() => {
-    if (!receipt?.logs || receipt.logs.length === 0) return [];
-    return decodeLogs(receipt.logs, knownTokens);
-  }, [receipt?.logs, knownTokens]);
 
   const overviewItems: { label: string; value: React.ReactNode }[] = [
     {
@@ -2067,8 +1753,10 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
     {
       label: 'Block',
       value: tx.blockNumber ? (
-        <button onClick={() => navigateTo(`#block/${hexToNumber(tx.blockNumber)}`)}
-          className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">
+        <button
+          onClick={() => navigateTo(`#block/${hexToNumber(tx.blockNumber)}`)}
+          className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs"
+        >
           {hexToNumber(tx.blockNumber).toLocaleString()}
         </button>
       ) : 'Pending',
@@ -2081,8 +1769,12 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
       label: 'From',
       value: (
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={() => navigateTo(`#address/${tx.from}`)}
-            className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">{tx.from}</button>
+          <button
+            onClick={() => navigateTo(`#address/${tx.from}`)}
+            className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs"
+          >
+            {tx.from}
+          </button>
           <CopyButton text={tx.from} />
         </div>
       ),
@@ -2090,31 +1782,44 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
     {
       label: 'To',
       value: isContractCreation ? (
-        <span className="text-[11px] bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded border border-yellow-200">Contract Creation</span>
+        <span className="text-[11px] bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded border border-yellow-200">
+          Contract Creation
+        </span>
       ) : tx.to ? (
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={() => navigateTo(`#address/${tx.to}`)}
-            className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">{tx.to}</button>
-          <CopyButton text={tx.to || ''} />
-          {knownTokens[tx.to.toLowerCase()] && (
-            <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-[10px] ml-1">
-              {knownTokens[tx.to.toLowerCase()].symbol}
-            </Badge>
-          )}
+          <button
+            onClick={() => navigateTo(`#address/${tx.to}`)}
+            className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs"
+          >
+            {tx.to}
+          </button>
+          <CopyButton text={tx.to} />
         </div>
       ) : '--',
     },
     {
       label: 'Value',
-      value: <span className="font-mono text-sm">{weiToExe(tx.value)} {NATIVE_TOKEN}</span>,
+      value: (
+        <span className="font-mono text-sm">
+          {weiToExe(tx.value)} {NATIVE_TOKEN}
+        </span>
+      ),
     },
     {
       label: 'Transaction Fee',
-      value: <span className="font-mono text-sm text-gray-600">{weiToExe(`0x${feeWei.toString(16)}`)} {NATIVE_TOKEN}</span>,
+      value: (
+        <span className="font-mono text-sm text-gray-600">
+          {weiToExe(`0x${feeWei.toString(16)}`)} {NATIVE_TOKEN}
+        </span>
+      ),
     },
     {
       label: 'Gas Price',
-      value: <span className="font-mono text-sm">{weiToGwei(gasPrice)} Gwei ({weiToExe(gasPrice)} {NATIVE_TOKEN})</span>,
+      value: (
+        <span className="font-mono text-sm">
+          {weiToGwei(gasPrice)} Gwei ({weiToExe(gasPrice)} {NATIVE_TOKEN})
+        </span>
+      ),
     },
     {
       label: 'Gas Limit',
@@ -2125,7 +1830,9 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
       value: (
         <div className="flex items-center gap-2">
           <span className="font-mono text-sm">{gasUsed.toLocaleString()}</span>
-          <span className="text-xs text-gray-400">({((gasUsed / hexToNumber(tx.gas)) * 100).toFixed(1)}%)</span>
+          <span className="text-xs text-gray-400">
+            ({((gasUsed / hexToNumber(tx.gas)) * 100).toFixed(1)}%)
+          </span>
         </div>
       ),
     },
@@ -2141,6 +1848,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
 
   return (
     <div className="space-y-6">
+      {/* Overview */}
       <Card className="border border-gray-200">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
@@ -2151,126 +1859,21 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
         <CardContent>
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             {overviewItems.map((item, i) => (
-              <div key={item.label}
+              <div
+                key={item.label}
                 className={`flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4 px-4 py-3 ${
                   i % 2 === 0 ? 'bg-gray-50/60' : 'bg-white'
-                } ${i < overviewItems.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                <span className="text-xs text-gray-500 font-medium shrink-0 w-48">{item.label}</span>
+                } ${i < overviewItems.length - 1 ? 'border-b border-gray-100' : ''}`}
+              >
+                <span className="text-xs text-gray-500 font-medium shrink-0 w-48">
+                  {item.label}
+                </span>
                 <span className="text-sm">{item.value}</span>
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
-
-      {/* Decoded Input Data */}
-      {!isSimpleTransfer && (
-        <Card className="border border-gray-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-              <Code2 className="w-4 h-4 text-gray-500" />
-              {decodedInput?.method && decodedInput.method !== input.slice(0, 10)
-                ? `Decoded Input Data: ${decodedInput.method}()`
-                : 'Input Data'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {decodedInput && decodedInput.params.length > 0 ? (
-              <div className="space-y-3">
-                {decodedInput.params.map((param, i) => (
-                  <div key={i} className="flex flex-col sm:flex-row gap-1 sm:gap-4 px-4 py-3 bg-gray-50/60 rounded-lg border border-gray-100">
-                    <span className="text-xs text-gray-500 font-medium shrink-0 w-32">{param.name}</span>
-                    <span className="text-xs text-gray-400 font-mono shrink-0 w-16">{param.type}</span>
-                    {param.type === 'address' ? (
-                      <button onClick={() => navigateTo(`#address/${param.value}`)}
-                        className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">
-                        {param.value}
-                      </button>
-                    ) : (
-                      <span className="font-mono text-xs break-all">{param.value}</span>
-                    )}
-                  </div>
-                ))}
-                <details className="mt-2">
-                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
-                    View Raw Input Data
-                  </summary>
-                  <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                    <pre className="p-4 overflow-x-auto max-h-64 overflow-y-auto text-xs font-mono leading-relaxed text-gray-600 break-all">
-                      {input}
-                    </pre>
-                  </div>
-                </details>
-              </div>
-            ) : (
-              <div>
-                <details>
-                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
-                    {isContractCreation ? 'Contract Creation Bytecode' : 'Raw Input Data'} (click to expand)
-                  </summary>
-                  <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                    <pre className="p-4 overflow-x-auto max-h-96 overflow-y-auto text-xs font-mono leading-relaxed text-gray-600 break-all">
-                      {input}
-                    </pre>
-                  </div>
-                </details>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Event Logs */}
-      {decodedLogs.length > 0 && (
-        <Card className="border border-gray-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-              <ScrollText className="w-4 h-4 text-gray-500" />
-              Event Logs ({decodedLogs.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {decodedLogs.map((evt, idx) => (
-                <div key={idx} className="border border-gray-100 rounded-lg overflow-hidden">
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
-                    <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-[11px]">
-                      {evt.name}
-                    </Badge>
-                    <button onClick={() => navigateTo(`#address/${evt.contract}`)}
-                      className="font-mono text-[11px] text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
-                      {shortHash(evt.contract)}
-                    </button>
-                    {knownTokens[evt.contract.toLowerCase()] && (
-                      <span className="text-[10px] text-gray-500">
-                        ({knownTokens[evt.contract.toLowerCase()].name})
-                      </span>
-                    )}
-                  </div>
-                  <div className="px-4 py-2 space-y-1.5">
-                    {evt.params.map((param, pi) => (
-                      <div key={pi} className="flex items-center gap-2 text-xs">
-                        <span className="text-gray-500 font-medium w-16 shrink-0">{param.name}</span>
-                        {param.type === 'address' ? (
-                          <button onClick={() => navigateTo(`#address/${param.value}`)}
-                            className="font-mono text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
-                            {shortHash(param.value)}
-                          </button>
-                        ) : (
-                          <span className="font-mono text-gray-700 break-all">{param.value}</span>
-                        )}
-                        <span className="text-gray-400">({param.type})</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Internal Transactions */}
       <Card className="border border-gray-200">
@@ -2291,377 +1894,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
 }
 
 // ============================================================================
-// TOKEN INFO CARD (for token contract addresses)
-// ============================================================================
-function TokenInfoCard({ token }: { token: TokenInfo }) {
-  const supplyFormatted = token.type === 'ERC20'
-    ? formatTokenBalance(token.totalSupply, token.decimals)
-    : BigInt(token.totalSupply).toLocaleString();
-
-  return (
-    <Card className="border-2 border-[#13b5c1]/30 bg-gradient-to-r from-teal-50/50 to-cyan-50/50">
-      <CardContent className="p-4">
-        <div className="flex items-start gap-4">
-          <TokenLogo symbol={token.symbol} address={token.address} size={48} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-bold text-base text-gray-900 truncate">{token.name}</h3>
-              <Badge className="bg-teal-100 text-teal-700 border-teal-200 text-[10px] shrink-0">
-                {token.type}
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 mt-3">
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase font-medium">Symbol</span>
-                <p className="text-sm font-mono font-semibold text-gray-800">{token.symbol}</p>
-              </div>
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase font-medium">Decimals</span>
-                <p className="text-sm font-mono text-gray-800">{token.decimals}</p>
-              </div>
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase font-medium">Total Supply</span>
-                <p className="text-sm font-mono text-gray-800 truncate">{supplyFormatted}</p>
-              </div>
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase font-medium">Contract</span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => navigateTo(`#address/${token.address}`)}
-                    className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs truncate">
-                    {shortHash(token.address)}
-                  </button>
-                  <CopyButton text={token.address} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ============================================================================
-// TOKEN HOLDINGS TAB
-// ============================================================================
-function TokenHoldingsTab({ address }: { address: string }) {
-  const [tokens, setTokens] = useState<TokenInfo[]>([]);
-  const [balances, setBalances] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    const discovered = getDiscoveredTokens();
-    const erc20Tokens = Object.values(discovered).filter(t => t.type === 'ERC20');
-    setTokens(erc20Tokens);
-
-    if (erc20Tokens.length === 0) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchBalances = async () => {
-      const balMap: Record<string, string> = {};
-      await Promise.all(erc20Tokens.map(async (t) => {
-        try {
-          const bal = await getTokenBalance(t.address, address, t.decimals);
-          if (bal !== '0') balMap[t.address.toLowerCase()] = bal;
-        } catch { /* skip */ }
-      }));
-      setBalances(balMap);
-      setLoading(false);
-    };
-    fetchBalances();
-  }, [address]);
-
-  const tokensWithBalance = tokens.filter(t => balances[t.address.toLowerCase()] && balances[t.address.toLowerCase()] !== '0');
-
-  if (loading) return <div className="py-8"><TableSkeleton rows={5} cols={4} /></div>;
-
-  if (tokensWithBalance.length === 0) {
-    return (
-      <div className="text-center py-10 text-gray-400">
-        <Coins className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p className="text-sm">No ERC-20 token holdings found for this address</p>
-        <p className="text-xs mt-1">Tokens are discovered as they are encountered in transactions</p>
-      </div>
-    );
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
-          <TableHead className="text-xs font-semibold text-gray-500 uppercase">Token</TableHead>
-          <TableHead className="text-xs font-semibold text-gray-500 uppercase">Symbol</TableHead>
-          <TableHead className="text-xs font-semibold text-gray-500 uppercase text-right">Balance</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tokensWithBalance.map(t => (
-          <TableRow key={t.address} className="text-sm">
-            <TableCell>
-              <div className="flex items-center gap-2">
-                <TokenLogo symbol={t.symbol} address={t.address} size={24} />
-                <button onClick={() => navigateTo(`#address/${t.address}`)}
-                  className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline text-xs truncate max-w-[200px]">
-                  {t.name}
-                </button>
-              </div>
-            </TableCell>
-            <TableCell className="font-mono text-xs">{t.symbol}</TableCell>
-            <TableCell className="text-right font-mono text-xs">
-              {balances[t.address.toLowerCase()]}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-// ============================================================================
-// NFT HOLDINGS TAB
-// ============================================================================
-function NFTHoldingsTab({ address }: { address: string }) {
-  const [nfts, setNfts] = useState<TokenInfo[]>([]);
-  const [holdings, setHoldings] = useState<{ token: TokenInfo; tokenIds: string[] }[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    const discovered = getDiscoveredTokens();
-    const erc721Tokens = Object.values(discovered).filter(t => t.type === 'ERC721');
-    setNfts(erc721Tokens);
-
-    if (erc721Tokens.length === 0) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchNFTBalances = async () => {
-      const results: { token: TokenInfo; tokenIds: string[] }[] = [];
-      await Promise.all(erc721Tokens.map(async (t) => {
-        try {
-          const paddedAddr = '0x' + address.replace('0x', '').padStart(64, '0');
-          const balHex = await ethCall(t.address, ERC721_BALANCEOF_SIG + paddedAddr.slice(2));
-          const count = hexToNumber(balHex);
-          if (count > 0) {
-            const ids: string[] = [];
-            for (let i = 0; i < Math.min(count, 20); i++) {
-              try {
-                const paddedIdx = '0x' + BigInt(i).toString(16).padStart(64, '0');
-                const tokenIdHex = await ethCall(t.address, ERC721_TOKENOFOWNERBYINDEX_SIG + paddedAddr.slice(2) + paddedIdx.slice(2));
-                if (tokenIdHex && tokenIdHex !== '0x' && tokenIdHex !== '0x0') {
-                  ids.push(BigInt(tokenIdHex).toString());
-                }
-              } catch { /* skip */ }
-            }
-            if (ids.length > 0) results.push({ token: t, tokenIds: ids });
-          }
-        } catch { /* skip */ }
-      }));
-      setHoldings(results);
-      setLoading(false);
-    };
-    fetchNFTBalances();
-  }, [address]);
-
-  if (loading) return <div className="py-8"><TableSkeleton rows={5} cols={4} /></div>;
-
-  if (holdings.length === 0) {
-    return (
-      <div className="text-center py-10 text-gray-400">
-        <Image className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p className="text-sm">No NFT holdings found for this address</p>
-        <p className="text-xs mt-1">NFT collections are discovered as they are encountered in transactions</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-      {holdings.map(({ token, tokenIds }) => (
-        <div key={token.address} className="border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-          <div className="h-32 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-            <TokenLogo symbol={token.symbol} address={token.address} size={56} />
-          </div>
-          <div className="p-3">
-            <h4 className="font-semibold text-sm truncate">{token.name}</h4>
-            <p className="text-xs text-gray-500 mb-2">{token.symbol} · {tokenIds.length} item{tokenIds.length !== 1 ? 's' : ''}</p>
-            <div className="flex flex-wrap gap-1">
-              {tokenIds.slice(0, 3).map(id => (
-                <Badge key={id} className="bg-gray-100 text-gray-600 text-[10px]">#{id}</Badge>
-              ))}
-              {tokenIds.length > 3 && (
-                <Badge className="bg-gray-100 text-gray-500 text-[10px]">+{tokenIds.length - 3}</Badge>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ============================================================================
-// READ CONTRACT TAB
-// ============================================================================
-function ReadContractTab({ address }: { address: string }) {
-  const [abi, setAbi] = useState<AbiItem[]>([]);
-  const [results, setResults] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [reading, setReading] = useState<string | null>(null);
-
-  useEffect(() => {
-    const vc = getVerifiedContract(address);
-    if (vc?.abi && Array.isArray(vc.abi)) {
-      setAbi(vc.abi.filter((item: AbiItem) => item.type === 'function' && (item.stateMutability === 'view' || item.stateMutability === 'pure' || item.constant)));
-    }
-    setLoading(false);
-  }, [address]);
-
-  const handleRead = async (method: AbiItem) => {
-    setReading(method.name);
-    try {
-      // Build calldata - for view functions with no inputs
-      // We need the function selector from ABI (4-byte)
-      // Since we may not have the selector, use known ones or compute
-      const selector = Object.entries(KNOWN_METHODS).find(([sig, name]) => name === method.name)?.[0];
-      if (!selector) {
-        setResults(prev => ({ ...prev, [method.name]: 'Error: Cannot determine function selector' }));
-        setReading(null);
-        return;
-      }
-      const result = await ethCall(address, selector);
-      if (method.outputs && method.outputs.length > 0) {
-        const outType = method.outputs[0].type;
-        if (outType === 'uint256' || outType === 'int256') {
-          setResults(prev => ({ ...prev, [method.name]: BigInt(result).toString() }));
-        } else if (outType === 'bool') {
-          setResults(prev => ({ ...prev, [method.name]: BigInt(result) === 1n ? 'true' : 'false' }));
-        } else if (outType === 'address') {
-          setResults(prev => ({ ...prev, [method.name]: topicToAddress(result) }));
-        } else if (outType === 'string' || outType.startsWith('bytes')) {
-          setResults(prev => ({ ...prev, [method.name]: result }));
-        } else {
-          setResults(prev => ({ ...prev, [method.name]: result }));
-        }
-      } else {
-        setResults(prev => ({ ...prev, [method.name]: result }));
-      }
-    } catch (e) {
-      setResults(prev => ({ ...prev, [method.name]: `Error: ${e instanceof Error ? e.message : 'Failed'}` }));
-    }
-    setReading(null);
-  };
-
-  if (loading) return <div className="py-8"><TableSkeleton rows={5} cols={3} /></div>;
-
-  if (abi.length === 0) {
-    return (
-      <div className="text-center py-10 text-gray-400">
-        <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p className="text-sm">No readable functions available</p>
-        <p className="text-xs mt-1">Contract source code must be verified to enable Read Contract</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 max-h-[600px] overflow-y-auto">
-      {abi.map((method) => (
-        <div key={method.name} className="border border-gray-200 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-50/80 border-b border-gray-100">
-            <div className="flex items-center gap-2">
-              <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">view</Badge>
-              <span className="font-mono text-sm font-medium text-gray-800">{method.name}</span>
-              <span className="text-xs text-gray-400">({method.inputs.map(i => `${i.type} ${i.name}`).join(', ')})</span>
-            </div>
-            {method.inputs.length === 0 && (
-              <Button size="sm" variant="outline" className="text-xs h-7"
-                onClick={() => handleRead(method)} disabled={reading === method.name}>
-                {reading === method.name ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Query'}
-              </Button>
-            )}
-          </div>
-          {results[method.name] !== undefined && (
-            <div className="px-4 py-3 bg-green-50/50">
-              <span className="text-[10px] text-gray-500 uppercase">Result:</span>
-              <div className="mt-1 font-mono text-xs text-gray-800 break-all">{results[method.name]}</div>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ============================================================================
-// WRITE CONTRACT TAB
-// ============================================================================
-function WriteContractTab({ address }: { address: string }) {
-  const [abi, setAbi] = useState<AbiItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const vc = getVerifiedContract(address);
-    if (vc?.abi && Array.isArray(vc.abi)) {
-      setAbi(vc.abi.filter((item: AbiItem) => item.type === 'function' && !item.constant && item.stateMutability !== 'view' && item.stateMutability !== 'pure'));
-    }
-    setLoading(false);
-  }, [address]);
-
-  if (loading) return <div className="py-8"><TableSkeleton rows={5} cols={3} /></div>;
-
-  if (abi.length === 0) {
-    return (
-      <div className="text-center py-10 text-gray-400">
-        <PenTool className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p className="text-sm">No write functions available</p>
-        <p className="text-xs mt-1">Contract source code must be verified to enable Write Contract</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 max-h-[600px] overflow-y-auto">
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 flex items-start gap-2 mb-4">
-        <AlertCircle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
-        <div className="text-xs text-yellow-800">
-          <p className="font-medium mb-1">MetaMask Required</p>
-          <p>Write contract interactions require a Web3 wallet (e.g., MetaMask) connected to the {CHAIN_NAME} network. Ensure your wallet is configured with Chain ID: {CHAIN_ID}.</p>
-        </div>
-      </div>
-      {abi.map((method) => (
-        <div key={method.name} className="border border-gray-200 rounded-lg overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 bg-gray-50/80 border-b border-gray-100">
-            <Badge className="bg-orange-50 text-orange-700 border-orange-200 text-[10px]">
-              {method.stateMutability === 'payable' ? 'payable' : 'write'}
-            </Badge>
-            <span className="font-mono text-sm font-medium text-gray-800">{method.name}</span>
-            <span className="text-xs text-gray-400">({method.inputs.map(i => `${i.type} ${i.name}`).join(', ')})</span>
-          </div>
-          <div className="px-4 py-3 space-y-2">
-            {method.inputs.map((input, idx) => (
-              <div key={idx} className="flex items-center gap-3">
-                <Label className="text-xs text-gray-600 shrink-0 w-24 font-mono">{input.name}</Label>
-                <Input placeholder={input.type} className="text-xs font-mono h-8" disabled />
-                <span className="text-[10px] text-gray-400">{input.type}</span>
-              </div>
-            ))}
-            <Button size="sm" className="text-xs h-8 bg-[#13b5c1] hover:bg-[#0fa3ae] text-white mt-1" disabled>
-              <Wallet className="w-3 h-3 mr-1" /> Write
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ============================================================================
-// ADDRESS DETAIL PAGE (Enhanced with Token Holdings, NFT, Read/Write Contract)
+// ADDRESS DETAIL PAGE
 // ============================================================================
 function AddressDetailPage({ address }: { address: string }) {
   const { balance, txCount, loading, error } = useAddress(address);
@@ -2676,54 +1909,33 @@ function AddressDetailPage({ address }: { address: string }) {
     sourceCode: string; abi: unknown; createdAt: string;
   } | null>(null);
   const [loadingContract, setLoadingContract] = useState(true);
-  const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
-  const [loadingToken, setLoadingToken] = useState(true);
-  const [isContract, setIsContract] = useState(false);
 
+  // Fetch verified contract info from localStorage
   useEffect(() => {
     if (!address) return;
     setLoadingContract(true);
+    // Use setTimeout to avoid blocking render
     const timer = setTimeout(() => {
       const stored = getVerifiedContract(address);
-      if (stored) setVerifiedContract(stored);
+      if (stored) {
+        setVerifiedContract(stored);
+      }
       setLoadingContract(false);
     }, 50);
     return () => clearTimeout(timer);
   }, [address]);
 
   useEffect(() => {
-    if (!address) return;
-    setLoadingToken(true);
-    // Check if contract
-    rpcCall('eth_getCode', [address, 'latest']).then((code) => {
-      if (code && code !== '0x' && code !== '0x0') {
-        setIsContract(true);
-        // Check known tokens first
-        const known = getDiscoveredTokens()[address.toLowerCase()];
-        if (known) {
-          setTokenInfo(known);
-          setLoadingToken(false);
-        } else {
-          detectToken(address).then((t) => {
-            if (t) setTokenInfo(t);
-            setLoadingToken(false);
-          }).catch(() => setLoadingToken(false));
-        }
-      } else {
-        setIsContract(false);
-        setLoadingToken(false);
-      }
-    }).catch(() => setLoadingToken(false));
-  }, [address]);
-
-  useEffect(() => {
     if (txCount === null) return;
     let mounted = true;
+
+    // Scan recent blocks for transactions related to this address
     const fetchAddressTxs = async () => {
       setLoadingTxs(true);
       const latestHex = await rpcCall('eth_blockNumber');
       const latestBlock = hexToNumber(latestHex);
       const allTxRows: TxRow[] = [];
+      const blocksToScan = 10 + (page - 1) * 5;
       const startBlock = latestBlock - (page - 1) * 5;
 
       for (let b = startBlock; b >= 0 && b > startBlock - 5; b--) {
@@ -2732,8 +1944,11 @@ function AddressDetailPage({ address }: { address: string }) {
           const hexBlock = `0x${b.toString(16)}`;
           const fullBlock = await rpcCall('eth_getBlockByNumber', [hexBlock, true]);
           if (!fullBlock || !fullBlock.transactions) continue;
-          const txArray = Array.isArray(fullBlock.transactions) ? fullBlock.transactions : [fullBlock.transactions];
+          const txArray = Array.isArray(fullBlock.transactions)
+            ? fullBlock.transactions
+            : [fullBlock.transactions];
           const timestamp = hexToNumber(fullBlock.timestamp) * 1000;
+
           for (const txObj of txArray) {
             if (allTxRows.length >= perPage * 2) break;
             try {
@@ -2753,8 +1968,12 @@ function AddressDetailPage({ address }: { address: string }) {
     };
 
     fetchAddressTxs().then((data) => {
-      if (mounted) { setTransactions(data); setLoadingTxs(false); }
+      if (mounted) {
+        setTransactions(data);
+        setLoadingTxs(false);
+      }
     });
+
     return () => { mounted = false; };
   }, [address, txCount, page]);
 
@@ -2764,7 +1983,14 @@ function AddressDetailPage({ address }: { address: string }) {
     return transactions;
   }, [transactions, txTab, address]);
 
-  if (loading) return <div className="space-y-4"><CardSkeleton /><CardSkeleton /></div>;
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -2799,17 +2025,10 @@ function AddressDetailPage({ address }: { address: string }) {
       label: 'Transactions',
       value: <span className="font-mono text-sm">{txCount ?? '--'}</span>,
     },
-    ...(isContract ? [{
-      label: 'Contract',
-      value: <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-[11px]"><Cuboid className="w-3 h-3 mr-1" />Smart Contract</Badge>,
-    }] : []),
   ];
 
   return (
     <div className="space-y-6">
-      {/* Token Info Card */}
-      {tokenInfo && <TokenInfoCard token={tokenInfo} />}
-
       {/* Overview */}
       <Card className="border border-gray-200">
         <CardHeader>
@@ -2821,11 +2040,15 @@ function AddressDetailPage({ address }: { address: string }) {
         <CardContent>
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             {overviewItems.map((item, i) => (
-              <div key={item.label}
+              <div
+                key={item.label}
                 className={`flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4 px-4 py-3 ${
                   i % 2 === 0 ? 'bg-gray-50/60' : 'bg-white'
-                } ${i < overviewItems.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                <span className="text-xs text-gray-500 font-medium shrink-0 w-40">{item.label}</span>
+                } ${i < overviewItems.length - 1 ? 'border-b border-gray-100' : ''}`}
+              >
+                <span className="text-xs text-gray-500 font-medium shrink-0 w-40">
+                  {item.label}
+                </span>
                 <span className="text-sm">{item.value}</span>
               </div>
             ))}
@@ -2833,21 +2056,19 @@ function AddressDetailPage({ address }: { address: string }) {
         </CardContent>
       </Card>
 
-      {/* Tabs */}
+      {/* Tabs: Transactions / Contract */}
       <Tabs value={tab} onValueChange={setTab}>
         <Card className="border border-gray-200">
           <CardHeader>
-            <TabsList className="flex-wrap h-auto gap-1">
-              <TabsTrigger value="transactions"><FileText className="w-4 h-4 mr-1.5" />Transactions</TabsTrigger>
-              <TabsTrigger value="token-holdings"><Coins className="w-4 h-4 mr-1.5" />Token Holdings</TabsTrigger>
-              <TabsTrigger value="nft-holdings"><Image className="w-4 h-4 mr-1.5" />NFT Holdings</TabsTrigger>
-              <TabsTrigger value="contract"><FileCode2 className="w-4 h-4 mr-1.5" />Contract</TabsTrigger>
-              {verifiedContract?.abi && (
-                <TabsTrigger value="read-contract"><BookOpen className="w-4 h-4 mr-1.5" />Read Contract</TabsTrigger>
-              )}
-              {verifiedContract?.abi && (
-                <TabsTrigger value="write-contract"><PenTool className="w-4 h-4 mr-1.5" />Write Contract</TabsTrigger>
-              )}
+            <TabsList>
+              <TabsTrigger value="transactions">
+                <FileText className="w-4 h-4 mr-1.5" />
+                Transactions
+              </TabsTrigger>
+              <TabsTrigger value="contract">
+                <FileCode2 className="w-4 h-4 mr-1.5" />
+                Contract
+              </TabsTrigger>
             </TabsList>
           </CardHeader>
         </Card>
@@ -2857,7 +2078,8 @@ function AddressDetailPage({ address }: { address: string }) {
             <CardHeader>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />Transactions
+                  <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+                  Transactions
                 </CardTitle>
                 <Tabs value={txTab} onValueChange={setTxTab}>
                   <TabsList>
@@ -2877,54 +2099,30 @@ function AddressDetailPage({ address }: { address: string }) {
           <SimplePagination currentPage={page} totalPages={100} onPageChange={setPage} />
         </TabsContent>
 
-        <TabsContent value="token-holdings">
-          <Card className="border border-gray-200">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-                <Coins className="w-4 h-4 text-gray-500" />
-                ERC-20 Token Holdings
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <TokenHoldingsTab address={address} />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="nft-holdings">
-          <Card className="border border-gray-200">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-                <Image className="w-4 h-4 text-gray-500" />
-                NFT Holdings (ERC-721)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <NFTHoldingsTab address={address} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="contract">
           <Card className="border border-gray-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />Contract
+                <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+                Contract
               </CardTitle>
             </CardHeader>
             <CardContent>
               {loadingContract ? (
-                <div className="space-y-3"><Skeleton className="h-5 w-48" /><Skeleton className="h-4 w-64" /><Skeleton className="h-[200px] w-full" /></div>
+                <div className="space-y-3">
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-4 w-64" />
+                  <Skeleton className="h-[200px] w-full" />
+                </div>
               ) : verifiedContract ? (
                 <div className="space-y-5">
+                  {/* Contract Info */}
                   <div className="border border-gray-100 rounded-lg overflow-hidden">
                     <div className="flex items-center gap-2 px-4 py-3 bg-green-50/50 border-b border-gray-100">
                       <ShieldCheck className="w-5 h-5 text-green-600" />
-                      <span className="text-sm font-semibold text-green-700">✓ Contract Source Code Verified</span>
+                      <span className="text-sm font-semibold text-green-700">
+                        ✓ Contract Source Code Verified
+                      </span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 py-3 bg-gray-50/60 border-b border-gray-100">
                       <span className="text-xs text-gray-500 font-medium shrink-0 w-40">Contract Name</span>
@@ -2936,13 +2134,19 @@ function AddressDetailPage({ address }: { address: string }) {
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 py-3 border-b border-gray-100">
                       <span className="text-xs text-gray-500 font-medium shrink-0 w-40">Optimization Enabled</span>
-                      <span className="text-sm text-gray-700">{verifiedContract.optimization > 0 ? `Yes (${verifiedContract.optimization} runs)` : 'No'}</span>
+                      <span className="text-sm text-gray-700">
+                        {verifiedContract.optimization > 0 ? `Yes (${verifiedContract.optimization} runs)` : 'No'}
+                      </span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 py-3">
                       <span className="text-xs text-gray-500 font-medium shrink-0 w-40">Verified On</span>
-                      <span className="text-sm text-gray-700">{verifiedContract.createdAt ? new Date(verifiedContract.createdAt).toLocaleString() : '--'}</span>
+                      <span className="text-sm text-gray-700">
+                        {verifiedContract.createdAt ? new Date(verifiedContract.createdAt).toLocaleString() : '--'}
+                      </span>
                     </div>
                   </div>
+
+                  {/* Source Code */}
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <Code2 className="w-4 h-4 text-gray-500" />
@@ -2962,376 +2166,22 @@ function AddressDetailPage({ address }: { address: string }) {
                     <ShieldCheck className="w-8 h-8 text-gray-400" />
                   </div>
                   <p className="text-gray-500 mb-1 font-medium">Contract Source Code Not Verified</p>
-                  <p className="text-sm text-gray-400 mb-5">Are you the contract creator? Verify and publish your source code to make it publicly available.</p>
-                  <Button onClick={() => navigateTo(`#verify-contract?address=${address}`)}
-                    className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white">
-                    <ShieldCheck className="w-4 h-4 mr-2" />Verify & Publish Source Code
+                  <p className="text-sm text-gray-400 mb-5">
+                    Are you the contract creator? Verify and publish your source code to make it publicly available.
+                  </p>
+                  <Button
+                    onClick={() => navigateTo(`#verify-contract?address=${address}`)}
+                    className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white"
+                  >
+                    <ShieldCheck className="w-4 h-4 mr-2" />
+                    Verify & Publish Source Code
                   </Button>
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
-
-        {verifiedContract?.abi && (
-          <TabsContent value="read-contract">
-            <Card className="border border-gray-200">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-                  <BookOpen className="w-4 h-4 text-gray-500" />
-                  Read Contract
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ReadContractTab address={address} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
-
-        {verifiedContract?.abi && (
-          <TabsContent value="write-contract">
-            <Card className="border border-gray-200">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-                  <PenTool className="w-4 h-4 text-gray-500" />
-                  Write Contract
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <WriteContractTab address={address} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
       </Tabs>
-    </div>
-  );
-}
-
-// ============================================================================
-// TOKENS TRACKER PAGE
-// ============================================================================
-function TokensTrackerPage() {
-  const [tokens, setTokens] = useState<TokenInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<'name' | 'symbol' | 'discovered'>('discovered');
-
-  useEffect(() => {
-    const discovered = getDiscoveredTokens();
-    const erc20List = Object.values(discovered).filter(t => t.type === 'ERC20');
-    setTokens(erc20List);
-    setLoading(false);
-  }, []);
-
-  const sorted = useMemo(() => {
-    return [...tokens].sort((a, b) => {
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      if (sortBy === 'symbol') return a.symbol.localeCompare(b.symbol);
-      return new Date(b.discoveredAt).getTime() - new Date(a.discoveredAt).getTime();
-    });
-  }, [tokens, sortBy]);
-
-  return (
-    <div className="space-y-6">
-      <Card className="border border-gray-200">
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-              <Coins className="w-5 h-5 text-[#13b5c1]" />
-              ERC-20 Token Tracker
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">Sort by:</span>
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
-                <SelectTrigger className="w-[130px] h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="discovered">Recently Added</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                  <SelectItem value="symbol">Symbol</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <TableSkeleton rows={8} cols={5} />
-          ) : sorted.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <Coins className="w-16 h-16 mx-auto mb-4 opacity-30" />
-              <p className="font-medium mb-1">No ERC-20 Tokens Discovered</p>
-              <p className="text-sm">Tokens are automatically discovered when their contracts are interacted with</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">#</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Token</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Symbol</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Decimals</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-right">Total Supply</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Contract</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sorted.map((t, idx) => (
-                  <TableRow key={t.address} className="text-sm hover:bg-gray-50/50">
-                    <TableCell className="text-gray-400 text-xs">{idx + 1}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <TokenLogo symbol={t.symbol} address={t.address} size={24} />
-                        <span className="font-medium text-gray-800 truncate max-w-[200px]">{t.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{t.symbol}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.decimals}</TableCell>
-                    <TableCell className="text-right font-mono text-xs">{formatTokenBalance(t.totalSupply, t.decimals)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => navigateTo(`#address/${t.address}`)}
-                          className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
-                          {shortHash(t.address)}
-                        </button>
-                        <CopyButton text={t.address} />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ============================================================================
-// NFT COLLECTIONS PAGE
-// ============================================================================
-function NFTCollectionsPage() {
-  const [nfts, setNfts] = useState<TokenInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const discovered = getDiscoveredTokens();
-    const erc721List = Object.values(discovered).filter(t => t.type === 'ERC721');
-    setNfts(erc721List);
-    setLoading(false);
-  }, []);
-
-  return (
-    <div className="space-y-6">
-      <Card className="border border-gray-200">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-            <Image className="w-5 h-5 text-[#13b5c1]" />
-            NFT Collections (ERC-721)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Card key={i} className="border border-gray-100"><CardContent className="p-0"><Skeleton className="h-32 w-full" /><Skeleton className="h-6 w-3/4 mx-3 mt-3" /><Skeleton className="h-4 w-1/2 mx-3 mt-2" /></CardContent></Card>
-              ))}
-            </div>
-          ) : nfts.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <Image className="w-16 h-16 mx-auto mb-4 opacity-30" />
-              <p className="font-medium mb-1">No NFT Collections Discovered</p>
-              <p className="text-sm">NFT collections are automatically discovered when their contracts are interacted with</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {nfts.map((nft) => (
-                <Card key={nft.address} className="border border-gray-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => navigateTo(`#address/${nft.address}`)}>
-                  <div className="h-36 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center relative">
-                    <TokenLogo symbol={nft.symbol} address={nft.address} size={64} />
-                    <Badge className="absolute top-2 right-2 bg-purple-50 text-purple-700 border-purple-200 text-[10px]">ERC-721</Badge>
-                  </div>
-                  <CardContent className="p-3">
-                    <h4 className="font-semibold text-sm truncate mb-0.5">{nft.name}</h4>
-                    <p className="text-xs text-gray-500 mb-2">{nft.symbol}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-gray-400">Supply: {BigInt(nft.totalSupply).toLocaleString()}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="font-mono text-[10px] text-[#13b5c1]">{shortHash(nft.address)}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ============================================================================
-// TOP ACCOUNTS PAGE
-// ============================================================================
-function TopAccountsPage() {
-  const { blockNumber } = useLatestBlockNumber();
-  const [accounts, setAccounts] = useState<{ address: string; balance: string; txCount: number; isContract: boolean }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<'balance' | 'txCount'>('balance');
-
-  useEffect(() => {
-    if (blockNumber === null) return;
-    let mounted = true;
-    const fetchTopAccounts = async () => {
-      setLoading(true);
-      const addrMap = new Map<string, { balance: bigint; txCount: number; isContract: boolean }>();
-
-      // Scan recent blocks to find unique addresses
-      const blocksToScan = 20;
-      const latest = blockNumber;
-      for (let b = latest; b >= latest - blocksToScan && b >= 0; b--) {
-        try {
-          const hexBlock = `0x${b.toString(16)}`;
-          const fullBlock = await rpcCall('eth_getBlockByNumber', [hexBlock, true]);
-          if (!fullBlock || !fullBlock.transactions) continue;
-          const txArray = Array.isArray(fullBlock.transactions) ? fullBlock.transactions : [fullBlock.transactions];
-          for (const txObj of txArray) {
-            const tx = txObj as RpcTransaction;
-            if (!tx) continue;
-            const addAddr = (addr: string) => {
-              const key = addr.toLowerCase();
-              if (!addrMap.has(key)) addrMap.set(key, { balance: 0n, txCount: 0, isContract: false });
-              const existing = addrMap.get(key)!;
-              existing.txCount += 1;
-            };
-            if (tx.from) addAddr(tx.from);
-            if (tx.to) addAddr(tx.to);
-            if (fullBlock.miner) addAddr(fullBlock.miner);
-          }
-        } catch { /* skip */ }
-      }
-
-      // Fetch balances for all found addresses
-      const entries = Array.from(addrMap.entries());
-      const balancePromises = entries.map(async ([addr]) => {
-        try {
-          const bal = await rpcCall('eth_getBalance', [addr, 'latest']);
-          let isContract = false;
-          try {
-            const code = await rpcCall('eth_getCode', [addr, 'latest']);
-            if (code && code !== '0x' && code !== '0x0') isContract = true;
-          } catch { /* skip */ }
-          return { address: addr, balance: BigInt(bal), ...addrMap.get(addr)!, isContract };
-        } catch {
-          return { address: addr, balance: 0n, ...addrMap.get(addr)!, isContract: false };
-        }
-      });
-
-      const results = await Promise.all(balancePromises);
-      if (mounted) {
-        setAccounts(results);
-        setLoading(false);
-      }
-    };
-    fetchTopAccounts();
-    return () => { mounted = false; };
-  }, [blockNumber]);
-
-  const sorted = useMemo(() => {
-    return [...accounts].sort((a, b) => {
-      if (sortBy === 'balance') return b.balance > a.balance ? 1 : -1;
-      return b.txCount - a.txCount;
-    });
-  }, [accounts, sortBy]);
-
-  return (
-    <div className="space-y-6">
-      <Card className="border border-gray-200">
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-              <Trophy className="w-5 h-5 text-[#13b5c1]" />
-              Top Accounts
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">Sort by:</span>
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
-                <SelectTrigger className="w-[130px] h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="balance">Balance</SelectItem>
-                  <SelectItem value="txCount">Tx Count</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">Top addresses discovered from recent blocks on {CHAIN_NAME}</p>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <TableSkeleton rows={10} cols={5} />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase w-12">#</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Address</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Type</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-right">Balance</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">Tx Count</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sorted.slice(0, 100).map((acc, idx) => {
-                  const tokenInfo = getDiscoveredTokens()[acc.address.toLowerCase()];
-                  return (
-                    <TableRow key={acc.address} className="text-sm hover:bg-gray-50/50">
-                      <TableCell className="text-gray-400 text-xs">{idx + 1}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {tokenInfo && <TokenLogo symbol={tokenInfo.symbol} address={acc.address} size={20} />}
-                          {acc.isContract && !tokenInfo && <Cuboid className="w-4 h-4 text-gray-400 shrink-0" />}
-                          <button onClick={() => navigateTo(`#address/${acc.address}`)}
-                            className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
-                            {shortHash(acc.address)}
-                          </button>
-                          <CopyButton text={acc.address} />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {acc.isContract ? (
-                          <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-[10px]">Contract</Badge>
-                        ) : (
-                          <Badge className="bg-gray-50 text-gray-600 border-gray-200 text-[10px]">EOA</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {weiToExe(`0x${acc.balance.toString(16)}`)} <span className="text-gray-400">{NATIVE_TOKEN}</span>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <span className="inline-flex items-center justify-center bg-gray-100 text-gray-700 text-xs rounded px-2 py-0.5 font-mono">
-                          {acc.txCount}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -3370,6 +2220,8 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
 
     try {
       const addr = address.trim().toLowerCase();
+
+      // 1. Get deployed bytecode from chain via RPC
       const deployedBytecode = await rpcCall('eth_getCode', [addr, 'latest']) as string;
       if (!deployedBytecode || deployedBytecode === '0x' || deployedBytecode === '0x0') {
         setResult({ success: false, message: 'No contract bytecode found at this address.' });
@@ -3377,9 +2229,11 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
         return;
       }
 
+      // 2. Load solc from CDN and compile source code
       let compiledBytecode = '';
       let compiledAbi: unknown[] = [];
 
+      // Map solc version to the binary filename version
       const versionMap: Record<string, string> = {
         '0.8.24': 'v0.8.24+commit.e11b9ed9',
         '0.8.20': 'v0.8.20+commit.a1b79de6',
@@ -3396,10 +2250,21 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
 
       const solcInput = {
         language: 'Solidity',
-        sources: { 'Contract.sol': { content: sourceCode } },
+        sources: {
+          'Contract.sol': {
+            content: sourceCode,
+          },
+        },
         settings: {
-          outputSelection: { '*': { '*': ['*'] } },
-          optimizer: { enabled: !!optimizationUsed, runs: optimizationRuns ? parseInt(optimizationRuns) : 200 },
+          outputSelection: {
+            '*': {
+              '*': ['*'],
+            },
+          },
+          optimizer: {
+            enabled: !!optimizationUsed,
+            runs: optimizationRuns ? parseInt(optimizationRuns) : 200,
+          },
         },
       };
 
@@ -3409,21 +2274,27 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
       if (output.errors) {
         const errors = output.errors.filter((e: { severity: string }) => e.severity === 'error');
         if (errors.length > 0) {
-          setResult({ success: false, message: 'Compilation failed', details: errors.map((e: { formattedMessage?: string; message?: string }) => e.formattedMessage || e.message) });
+          setResult({
+            success: false,
+            message: 'Compilation failed',
+            details: errors.map((e: { formattedMessage?: string; message?: string }) => e.formattedMessage || e.message),
+          });
           setLoading(false);
           return;
         }
       }
 
+      // Find the contract in the output
       const contractFile = output.contracts?.['Contract.sol'];
       if (!contractFile) {
-        setResult({ success: false, message: 'No contracts found in source. Check your Solidity code.' });
+        setResult({ success: false, message: `No contracts found in source. Check your Solidity code.` });
         setLoading(false);
         return;
       }
 
       let targetContract = contractFile[contractName.trim()];
       if (!targetContract) {
+        // Try to find any contract
         const contractKeys = Object.keys(contractFile);
         if (contractKeys.length === 0) {
           setResult({ success: false, message: `Contract "${contractName}" not found in compiled output.` });
@@ -3442,23 +2313,39 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
         return;
       }
 
+      // 3. Normalize and compare bytecodes
       const normalizedDeployed = normalizeBytecode(deployedBytecode.toLowerCase());
       const normalizedCompiled = normalizeBytecode('0x' + compiledBytecode.toLowerCase());
+
       let fullCompiledBytecode = normalizedCompiled;
       if (constructorArguments && constructorArguments.trim()) {
         fullCompiledBytecode = normalizedCompiled + constructorArguments.trim().replace(/^0x/, '');
       }
 
       if (fullCompiledBytecode !== normalizedDeployed) {
-        setResult({ success: false, message: 'Bytecode mismatch - the compiled bytecode does not match the on-chain bytecode.', details: [`Compiled length: ${fullCompiledBytecode.length}`, `Deployed length: ${normalizedDeployed.length}`] });
+        setResult({
+          success: false,
+          message: 'Bytecode mismatch - the compiled bytecode does not match the on-chain bytecode. Please check compiler version, optimization settings, and constructor arguments.',
+          details: [
+            `Compiled length: ${fullCompiledBytecode.length}`,
+            `Deployed length: ${normalizedDeployed.length}`,
+          ],
+        });
         setLoading(false);
         return;
       }
 
+      // 4. Save to localStorage
       saveVerifiedContract({
-        address: addr, name: contractName.trim(), compiler: 'solc', version: output.version || compilerVersion,
-        optimization: optimizationUsed ? (parseInt(optimizationRuns) || 200) : 0, sourceCode, abi: compiledAbi,
-        bytecode: deployedBytecode, constructorArguments: constructorArguments.trim() || null,
+        address: addr,
+        name: contractName.trim(),
+        compiler: 'solc',
+        version: output.version || compilerVersion,
+        optimization: optimizationUsed ? (parseInt(optimizationRuns) || 200) : 0,
+        sourceCode,
+        abi: compiledAbi,
+        bytecode: deployedBytecode,
+        constructorArguments: constructorArguments.trim() || null,
         createdAt: new Date().toISOString(),
       });
 
@@ -3483,70 +2370,174 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500 mb-6">
-            Verify and publish your contract source code on {CHAIN_NAME} Explorer. Verified contracts are stored in your browser&apos;s local storage.
+            Verify and publish your contract source code on {CHAIN_NAME} Explorer. The compiled bytecode will be compared against the deployed bytecode on-chain. Verified contracts are stored in your browser's local storage.
           </p>
+
+          {/* Contract Address */}
           <div className="space-y-2 mb-5">
-            <Label htmlFor="vc-address" className="text-sm font-medium text-gray-700">Contract Address <span className="text-red-500">*</span></Label>
-            <Input id="vc-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="0x..." className="font-mono text-sm" />
+            <Label htmlFor="vc-address" className="text-sm font-medium text-gray-700">
+              Contract Address <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="vc-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="0x..."
+              className="font-mono text-sm"
+            />
           </div>
+
+          {/* Contract Name */}
           <div className="space-y-2 mb-5">
-            <Label htmlFor="vc-name" className="text-sm font-medium text-gray-700">Contract Name <span className="text-red-500">*</span></Label>
-            <Input id="vc-name" value={contractName} onChange={(e) => setContractName(e.target.value)} placeholder="MyToken" className="text-sm" />
+            <Label htmlFor="vc-name" className="text-sm font-medium text-gray-700">
+              Contract Name <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="vc-name"
+              value={contractName}
+              onChange={(e) => setContractName(e.target.value)}
+              placeholder="MyToken"
+              className="text-sm"
+            />
           </div>
+
+          {/* Compiler & Version row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">Compiler</Label>
-              <Select value="solc" disabled><SelectTrigger className="text-sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="solc">Single part solc</SelectItem></SelectContent></Select>
+              <Select value="solc" disabled>
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="solc">Single part solc</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400">Currently only solc (Single part) is supported</p>
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">Compiler Version</Label>
               <Select value={compilerVersion} onValueChange={setCompilerVersion}>
-                <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>{SOLC_VERSIONS.map((v) => (<SelectItem key={v} value={v}>{v}</SelectItem>))}</SelectContent>
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOLC_VERSIONS.map((v) => (
+                    <SelectItem key={v} value={v}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
           </div>
+
+          {/* Optimization */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">Optimization</Label>
               <div className="flex items-center gap-3">
-                <Switch checked={optimizationUsed} onCheckedChange={setOptimizationUsed} />
-                <span className="text-sm text-gray-600">{optimizationUsed ? 'Enabled' : 'Disabled'}</span>
+                <Switch
+                  checked={optimizationUsed}
+                  onCheckedChange={setOptimizationUsed}
+                />
+                <span className="text-sm text-gray-600">
+                  {optimizationUsed ? 'Enabled' : 'Disabled'}
+                </span>
               </div>
             </div>
             {optimizationUsed && (
               <div className="space-y-2">
-                <Label htmlFor="vc-runs" className="text-sm font-medium text-gray-700">Optimization Runs</Label>
-                <Input id="vc-runs" type="number" value={optimizationRuns} onChange={(e) => setOptimizationRuns(e.target.value)} className="text-sm font-mono" />
+                <Label htmlFor="vc-runs" className="text-sm font-medium text-gray-700">
+                  Optimization Runs
+                </Label>
+                <Input
+                  id="vc-runs"
+                  type="number"
+                  value={optimizationRuns}
+                  onChange={(e) => setOptimizationRuns(e.target.value)}
+                  className="text-sm font-mono"
+                />
               </div>
             )}
           </div>
+
+          {/* Constructor Arguments */}
           <div className="space-y-2 mb-5">
-            <Label htmlFor="vc-constructor" className="text-sm font-medium text-gray-700">Constructor Arguments <span className="text-xs text-gray-400 font-normal ml-1">(ABI-encoded, optional)</span></Label>
-            <Textarea id="vc-constructor" value={constructorArguments} onChange={(e) => setConstructorArguments(e.target.value)} placeholder="0x000000000000000000000000..." className="text-sm font-mono min-h-[80px]" rows={3} />
+            <Label htmlFor="vc-constructor" className="text-sm font-medium text-gray-700">
+              Constructor Arguments
+              <span className="text-xs text-gray-400 font-normal ml-1">(ABI-encoded, optional)</span>
+            </Label>
+            <Textarea
+              id="vc-constructor"
+              value={constructorArguments}
+              onChange={(e) => setConstructorArguments(e.target.value)}
+              placeholder="0x000000000000000000000000..."
+              className="text-sm font-mono min-h-[80px]"
+              rows={3}
+            />
           </div>
+
+          {/* Source Code */}
           <div className="space-y-2 mb-6">
-            <Label htmlFor="vc-source" className="text-sm font-medium text-gray-700">Source Code <span className="text-red-500">*</span></Label>
-            <Textarea id="vc-source" value={sourceCode} onChange={(e) => setSourceCode(e.target.value)}
-              placeholder="// SPDX-License-Identifier: MIT&#10;pragma solidity ^0.8.24;&#10;&#10;contract MyToken { ... }"
-              className="text-sm font-mono min-h-[300px]" rows={16} />
+            <Label htmlFor="vc-source" className="text-sm font-medium text-gray-700">
+              Source Code <span className="text-red-500">*</span>
+            </Label>
+            <Textarea
+              id="vc-source"
+              value={sourceCode}
+              onChange={(e) => setSourceCode(e.target.value)}
+              placeholder="// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+contract MyToken { ... }"
+              className="text-sm font-mono min-h-[300px]"
+              rows={16}
+            />
           </div>
+
+          {/* Result Messages */}
           {result && (
-            <div className={`rounded-lg border p-4 mb-5 ${result.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+            <div className={`rounded-lg border p-4 mb-5 ${
+              result.success
+                ? 'bg-green-50 border-green-200 text-green-800'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
               <div className="flex items-start gap-2">
-                {result.success ? <Check className="w-5 h-5 text-green-500 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />}
+                {result.success ? (
+                  <Check className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                )}
                 <div>
                   <p className="text-sm font-medium">{result.message}</p>
                   {result.details && Array.isArray(result.details) && (
-                    <ul className="mt-2 space-y-1">{result.details.map((d, i) => (<li key={i} className="text-xs text-red-600 font-mono break-all">• {d}</li>))}</ul>
+                    <ul className="mt-2 space-y-1">
+                      {result.details.map((d, i) => (
+                        <li key={i} className="text-xs text-red-600 font-mono break-all">• {d}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               </div>
             </div>
           )}
-          <Button onClick={handleVerify} disabled={loading || !address.trim() || !contractName.trim() || !sourceCode.trim()}
-            className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white px-8">
-            {loading ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Verifying & Compiling...</>) : (<><ShieldCheck className="w-4 h-4 mr-2" />Verify & Publish</>)}
+
+          {/* Verify Button */}
+          <Button
+            onClick={handleVerify}
+            disabled={loading || !address.trim() || !contractName.trim() || !sourceCode.trim()}
+            className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white px-8"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Verifying & Compiling...
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="w-4 h-4 mr-2" />
+                Verify & Publish
+              </>
+            )}
           </Button>
         </CardContent>
       </Card>
@@ -3569,9 +2560,15 @@ function Footer() {
             <span className="font-medium text-gray-600">{CHAIN_NAME} Explorer © 2024</span>
           </div>
           <div className="flex items-center gap-4 text-xs">
-            <span className="flex items-center gap-1"><Hash className="w-3 h-3" /> Chain ID: {CHAIN_ID}</span>
-            <span className="flex items-center gap-1"><Cpu className="w-3 h-3" /> Clique PoA</span>
-            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Powered by Geth</span>
+            <span className="flex items-center gap-1">
+              <Hash className="w-3 h-3" /> Chain ID: {CHAIN_ID}
+            </span>
+            <span className="flex items-center gap-1">
+              <Cpu className="w-3 h-3" /> Clique PoA
+            </span>
+            <span className="flex items-center gap-1">
+              <Activity className="w-3 h-3" /> Powered by Geth
+            </span>
           </div>
         </div>
       </div>
@@ -3589,28 +2586,26 @@ type ViewType =
   | { page: 'block'; blockNumber: number }
   | { page: 'tx'; txHash: string }
   | { page: 'address'; address: string }
-  | { page: 'verify-contract'; prefillAddress?: string }
-  | { page: 'tokens' }
-  | { page: 'nfts' }
-  | { page: 'top-accounts' };
+  | { page: 'verify-contract'; prefillAddress?: string };
 
 function parseHash(hash: string): ViewType {
   if (!hash || hash === '#' || hash === '#home') return { page: 'home' };
   if (hash === '#blocks') return { page: 'blocks' };
   if (hash === '#txs') return { page: 'txs' };
-  if (hash === '#tokens') return { page: 'tokens' };
-  if (hash === '#nfts') return { page: 'nfts' };
-  if (hash === '#top-accounts') return { page: 'top-accounts' };
   if (hash === '#verify-contract' || hash.startsWith('#verify-contract?')) {
     const addressMatch = hash.match(/[?&]address=(0x[a-fA-F0-9]+)/);
     return { page: 'verify-contract', prefillAddress: addressMatch ? addressMatch[1] : undefined };
   }
+
   const blockMatch = hash.match(/^#block\/(\d+)$/);
   if (blockMatch) return { page: 'block', blockNumber: parseInt(blockMatch[1]) };
+
   const txMatch = hash.match(/^#tx\/(0x[a-fA-F0-9]+)$/);
   if (txMatch) return { page: 'tx', txHash: txMatch[1] };
+
   const addressMatch = hash.match(/^#address\/(0x[a-fA-F0-9]+)$/);
   if (addressMatch) return { page: 'address', address: addressMatch[1] };
+
   return { page: 'home' };
 }
 
@@ -3620,7 +2615,8 @@ export default function ExplorerApp() {
 
   useEffect(() => {
     const handleHashChange = () => {
-      setView(parseHash(window.location.hash));
+      const hash = window.location.hash;
+      setView(parseHash(hash));
       setRefreshKey((k) => k + 1);
     };
     handleHashChange();
@@ -3641,13 +2637,12 @@ export default function ExplorerApp() {
       case 'tx': return `Transaction | ${CHAIN_NAME}`;
       case 'address': return `Address ${shortHash(view.address)} | ${CHAIN_NAME}`;
       case 'verify-contract': return `Verify Contract | ${CHAIN_NAME}`;
-      case 'tokens': return `Tokens | ${CHAIN_NAME}`;
-      case 'nfts': return `NFTs | ${CHAIN_NAME}`;
-      case 'top-accounts': return `Top Accounts | ${CHAIN_NAME}`;
     }
   }, [view]);
 
-  useEffect(() => { document.title = pageTitle; }, [pageTitle]);
+  useEffect(() => {
+    document.title = pageTitle;
+  }, [pageTitle]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -3661,9 +2656,6 @@ export default function ExplorerApp() {
           {view.page === 'tx' && <TransactionDetailPage txHash={view.txHash} />}
           {view.page === 'address' && <AddressDetailPage address={view.address} />}
           {view.page === 'verify-contract' && <VerifyContractPage prefillAddress={view.prefillAddress} />}
-          {view.page === 'tokens' && <TokensTrackerPage />}
-          {view.page === 'nfts' && <NFTCollectionsPage />}
-          {view.page === 'top-accounts' && <TopAccountsPage />}
         </main>
         <Footer />
       </TooltipProvider>
