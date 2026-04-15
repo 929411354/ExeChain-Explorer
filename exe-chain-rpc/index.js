@@ -1,6 +1,355 @@
-// Exe Chain RPC Worker - Deterministic blockchain simulation on Cloudflare Edge
+// Exe Chain RPC Worker - Simulated blockchain with MetaMask transaction support
 const CHAIN_ID = 8848;
-const BLOCK_TIME = 3; // seconds per block (ethereum spec uses seconds, not ms)
+const BLOCK_TIME = 3;
+
+// ============================================================
+// Compact Keccak-256 Implementation (SAARINEN's approach)
+// ============================================================
+const KECCAK_RC = [
+  1n, 0x8082n, 0x800000000000808an, 0x8000000080008000n,
+  0x000000000000808bn, 0x0000000080000001n, 0x8000000080008081n,
+  0x8000000000008009n, 0x000000000000008an, 0x0000000000000088n,
+  0x0000000080008009n, 0x000000008000000an, 0x000000008000808bn,
+  0x800000000000008bn, 0x8000000000008089n, 0x8000000000008003n,
+  0x8000000000008002n, 0x8000000000000080n, 0x000000000000800an,
+  0x800000008000000an, 0x8000000080008081n, 0x8000000000008080n,
+  0x0000000080000001n, 0x8000000080008008n
+];
+
+const ROT = [
+  [0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61],
+  [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]
+];
+
+const MASK64 = 0xFFFFFFFFFFFFFFFFn;
+
+function rot64(x, n) {
+  return ((x << BigInt(n)) | (x >> BigInt(64 - n))) & MASK64;
+}
+
+function keccakf1600(state) {
+  // state: Array of 25 BigInt (each 64-bit)
+  for (let round = 0; round < 24; round++) {
+    // θ (theta)
+    const C = [];
+    for (let i = 0; i < 5; i++) {
+      C[i] = state[i] ^ state[i + 5] ^ state[i + 10] ^ state[i + 15] ^ state[i + 20];
+    }
+    const D = [];
+    for (let i = 0; i < 5; i++) {
+      D[i] = C[(i + 4) % 5] ^ rot64(C[(i + 1) % 5], 1);
+    }
+    for (let i = 0; i < 25; i++) {
+      state[i] ^= D[i % 5];
+    }
+    // ρ (rho) and π (pi) — note: ROT[x][y] not ROT[y][x]
+    const B = new Array(25);
+    for (let x = 0; x < 5; x++) {
+      for (let y = 0; y < 5; y++) {
+        B[y + 5 * ((2 * x + 3 * y) % 5)] = rot64(state[x + 5 * y], ROT[x][y]);
+      }
+    }
+    // χ (chi)
+    for (let x = 0; x < 5; x++) {
+      for (let y = 0; y < 5; y++) {
+        state[x + 5 * y] = B[x + 5 * y] ^ ((~B[(x + 1) % 5 + 5 * y]) & B[(x + 2) % 5 + 5 * y]);
+      }
+    }
+    // ι (iota)
+    state[0] ^= KECCAK_RC[round];
+  }
+}
+
+function keccak256(inputBytes) {
+  // inputBytes: Uint8Array
+  // Output: Uint8Array(32)
+  const RATE = 136; // Keccak-256: capacity=512 bits, rate=(1600-512)/8=136 bytes
+  const state = new Array(25).fill(0n);
+  const len = inputBytes.length;
+  let offset = 0;
+
+  // Absorb full rate-sized blocks
+  while (offset + RATE <= len) {
+    for (let i = 0; i < RATE; i++) {
+      state[Math.floor(i / 8)] ^= BigInt(inputBytes[offset + i]) << BigInt((i % 8) * 8);
+    }
+    keccakf1600(state);
+    offset += RATE;
+  }
+
+  // Absorb remaining partial block + Keccak pad10*1 padding
+  const remaining = len - offset;
+  for (let i = 0; i < remaining; i++) {
+    state[Math.floor(i / 8)] ^= BigInt(inputBytes[offset + i]) << BigInt((i % 8) * 8);
+  }
+  // pad10*1: 0x01 at position 'remaining', 0x80 at last byte of rate
+  state[Math.floor(remaining / 8)] ^= BigInt(0x01) << BigInt((remaining % 8) * 8);
+ state[Math.floor((RATE - 1) / 8)] ^= BigInt(0x80) << BigInt(((RATE - 1) % 8) * 8);
+  keccakf1600(state);
+  
+  // Squeeze (only need 32 bytes = 4 lanes)
+  const output = new Uint8Array(32);
+  for (let i = 0; i < 4; i++) {
+    const lane = state[i];
+    for (let j = 0; j < 8; j++) {
+      output[i * 8 + j] = Number((lane >> BigInt(j * 8)) & 0xFFn);
+    }
+  }
+  return output;
+}
+
+function keccak256Hex(hexString) {
+  // Remove 0x prefix
+  const hex = hexString.startsWith('0x') || hexString.startsWith('0X') ? hexString.slice(2) : hexString;
+  const bytes = hexToBytes(hex);
+  const hash = keccak256(bytes);
+  return '0x' + bytesToHex(hash);
+}
+
+// ============================================================
+// Byte Array Utilities
+// ============================================================
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(Math.ceil(hex.length / 2));
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
+}
+
+function bytesToHex(bytes) {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
+function hexToBigInt(hex) {
+  if (!hex || hex === '0x' || hex === '0X') return 0n;
+  const h = hex.startsWith('0x') || hex.startsWith('0X') ? hex.slice(2) : hex;
+  return h.length > 0 ? BigInt('0x' + h) : 0n;
+}
+
+function bigIntToHex(bi) {
+  if (bi === 0n) return '0x0';
+  return '0x' + bi.toString(16);
+}
+
+function padToEven(hex) {
+  return hex.length % 2 === 1 ? '0' + hex : hex;
+}
+
+function stripZeros(hex) {
+  let i = 0;
+  while (i < hex.length - 1 && hex[i] === '0') i++;
+  return hex.slice(i);
+}
+
+// ============================================================
+// RLP Decoder
+// ============================================================
+function rlpDecode(input) {
+  // input: Uint8Array
+  // returns: { data: any, remainder: Uint8Array }
+  if (input.length === 0) throw new Error('RLP: empty input');
+  
+  const firstByte = input[0];
+  let offset = 1;
+  
+  if (firstByte <= 0x7f) {
+    // Single byte
+    return { data: new Uint8Array([firstByte]), remainder: input.slice(offset) };
+  } else if (firstByte <= 0xb7) {
+    // Short string (0-55 bytes)
+    const strLen = firstByte - 0x80;
+    const data = input.slice(offset, offset + strLen);
+    return { data, remainder: input.slice(offset + strLen) };
+  } else if (firstByte <= 0xbf) {
+    // Long string (>55 bytes)
+    const lenOfLen = firstByte - 0xb7;
+    const strLen = parseInt(bytesToHex(input.slice(offset, offset + lenOfLen)), 16);
+    offset += lenOfLen;
+    const data = input.slice(offset, offset + strLen);
+    return { data, remainder: input.slice(offset + strLen) };
+  } else if (firstByte <= 0xf7) {
+    // Short list (0-55 bytes total payload)
+    const listLen = firstByte - 0xc0;
+    const listBytes = input.slice(offset, offset + listLen);
+    const items = [];
+    let remaining = listBytes;
+    while (remaining.length > 0) {
+      const result = rlpDecode(remaining);
+      items.push(result.data);
+      remaining = result.remainder;
+    }
+    return { data: items, remainder: input.slice(offset + listLen) };
+  } else {
+    // Long list (>55 bytes total payload)
+    const lenOfLen = firstByte - 0xf7;
+    const listLen = parseInt(bytesToHex(input.slice(offset, offset + lenOfLen)), 16);
+    offset += lenOfLen;
+    const listBytes = input.slice(offset, offset + listLen);
+    const items = [];
+    let remaining = listBytes;
+    while (remaining.length > 0) {
+      const result = rlpDecode(remaining);
+      items.push(result.data);
+      remaining = result.remainder;
+    }
+    return { data: items, remainder: input.slice(offset + listLen) };
+  }
+}
+
+function bytesToAddressHex(bytes) {
+  if (!bytes || bytes.length === 0) return null;
+  return '0x' + bytesToHex(bytes).padStart(40, '0').slice(-40);
+}
+
+// ============================================================
+// Raw Transaction Decoder
+// ============================================================
+function decodeRawTransaction(rawHex) {
+  let hex = rawHex.startsWith('0x') || rawHex.startsWith('0X') ? rawHex.slice(2) : rawHex;
+  if (!hex || hex.length < 2) return null;
+  
+  const bytes = hexToBytes(hex);
+  
+  // Check for EIP-2718 typed transaction (0x01 = LegacyFeeMarket, 0x02 = EIP-1559)
+  let txType = 0;
+  let payload;
+  
+  if (bytes[0] >= 0x01 && bytes[0] <= 0x7f) {
+    // Typed transaction: type byte followed by RLP encoded envelope
+    txType = bytes[0];
+    const envelope = rlpDecode(bytes.slice(1));
+    payload = envelope.data; // This is the list of fields
+  } else {
+    // Legacy transaction: RLP encoded directly
+    txType = 0;
+    const result = rlpDecode(bytes);
+    payload = result.data;
+  }
+  
+  if (!Array.isArray(payload)) return null;
+  
+  let from, to, value, gas, nonce, data, gasPrice, maxFeePerGas, maxPriorityFeePerGas, v, r, s;
+  
+  if (txType === 2) {
+    // EIP-1559: [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList, signatureYParity, signatureR, signatureS]
+    const chainId = payload[0] ? hexToBigInt('0x' + bytesToHex(payload[0])) : 0n;
+    nonce = payload[1] ? hexToBigInt('0x' + bytesToHex(payload[1])) : 0n;
+    maxPriorityFeePerGas = payload[2] ? hexToBigInt('0x' + bytesToHex(payload[2])) : 0n;
+    maxFeePerGas = payload[3] ? hexToBigInt('0x' + bytesToHex(payload[3])) : 0n;
+    gas = payload[4] ? hexToBigInt('0x' + bytesToHex(payload[4])) : 21000n;
+    to = payload[5] && payload[5].length > 0 ? bytesToAddressHex(payload[5]) : null;
+    value = payload[6] ? hexToBigInt('0x' + bytesToHex(payload[6])) : 0n;
+    data = payload[7] ? '0x' + bytesToHex(payload[7]) : '0x';
+    // accessList = payload[8]
+    v = payload[9] ? hexToBigInt('0x' + bytesToHex(payload[9])) : 0n;
+    r = payload[10] ? '0x' + bytesToHex(payload[10]).padStart(64, '0') : '0x0';
+    s = payload[11] ? '0x' + bytesToHex(payload[11]).padStart(64, '0') : '0x0';
+    gasPrice = maxFeePerGas; // effective gas price for display
+    
+    // Compute tx hash: keccak256(type || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList]))
+    const unsignedPayload = [payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7], payload[8]];
+    const rlpEncoded = rlpEncodeList(unsignedPayload);
+    const preimage = new Uint8Array(1 + rlpEncoded.length);
+    preimage[0] = txType;
+    preimage.set(rlpEncoded, 1);
+    const hashBytes = keccak256(preimage);
+    const hash = '0x' + bytesToHex(hashBytes);
+    
+    // Recover from address (simplified - we'll use a deterministic approach)
+    // Since we can't easily do secp256k1 in a Worker, we derive a pseudo-from from r,s
+    from = '0x' + bytesToHex(keccak256(hexToBytes(r + s))).slice(0, 40);
+    
+    return {
+      type: '0x2', hash, nonce: bigIntToHex(nonce), gasPrice: bigIntToHex(gasPrice),
+      maxFeePerGas: bigIntToHex(maxFeePerGas), maxPriorityFeePerGas: bigIntToHex(maxPriorityFeePerGas),
+      gas: bigIntToHex(gas), to, value: bigIntToHex(value), input: data,
+      from, v: bigIntToHex(v), r, s
+    };
+  } else if (txType === 0) {
+    // Legacy: [nonce, gasPrice, gasLimit, to, value, data, v, r, s]
+    nonce = payload[0] ? hexToBigInt('0x' + bytesToHex(payload[0])) : 0n;
+    gasPrice = payload[1] ? hexToBigInt('0x' + bytesToHex(payload[1])) : 0n;
+    gas = payload[2] ? hexToBigInt('0x' + bytesToHex(payload[2])) : 21000n;
+    to = payload[3] && payload[3].length > 0 ? bytesToAddressHex(payload[3]) : null;
+    value = payload[4] ? hexToBigInt('0x' + bytesToHex(payload[4])) : 0n;
+    data = payload[5] ? '0x' + bytesToHex(payload[5]) : '0x';
+    v = payload[6] ? hexToBigInt('0x' + bytesToHex(payload[6])) : 0n;
+    r = payload[7] ? '0x' + bytesToHex(payload[7]).padStart(64, '0') : '0x0';
+    s = payload[8] ? '0x' + bytesToHex(payload[8]).padStart(64, '0') : '0x0';
+    
+    // Compute tx hash: keccak256(rlp([nonce, gasPrice, gasLimit, to, value, data, v, r, s]))
+    const hashBytes = keccak256(bytes);
+    const hash = '0x' + bytesToHex(hashBytes);
+    
+    // Derive pseudo-from from r,s
+    from = '0x' + bytesToHex(keccak256(hexToBytes(r + s))).slice(0, 40);
+    
+    return {
+      type: '0x0', hash, nonce: bigIntToHex(nonce), gasPrice: bigIntToHex(gasPrice),
+      gas: bigIntToHex(gas), to, value: bigIntToHex(value), input: data,
+      from, v: bigIntToHex(v), r, s
+    };
+  }
+  
+  return null;
+}
+
+// ============================================================
+// RLP Encoder (minimal, for tx hash computation)
+// ============================================================
+function rlpEncodeLength(len, offset) {
+  if (len < 56) {
+    return new Uint8Array([offset + len]);
+  } else {
+    const hex = len.toString(16);
+    const lenBytes = hexToBytes(padToEven(hex));
+    const result = new Uint8Array(1 + lenBytes.length);
+    result[0] = offset + 55 + lenBytes.length;
+    result.set(lenBytes, 1);
+    return result;
+  }
+}
+
+function rlpEncodeBytes(bytes) {
+  if (bytes.length === 1 && bytes[0] < 0x80) {
+    return new Uint8Array(bytes);
+  }
+  const prefix = rlpEncodeLength(bytes.length, 0x80);
+  const result = new Uint8Array(prefix.length + bytes.length);
+  result.set(prefix, 0);
+  result.set(bytes, prefix.length);
+  return result;
+}
+
+function rlpEncodeList(items) {
+  // items: array of Uint8Array
+  const encodedItems = items.map(item => {
+    if (item === null || item === undefined || (Array.isArray(item) && item.length === 0)) {
+      return rlpEncodeBytes(new Uint8Array([]));
+    }
+    return rlpEncodeBytes(item);
+  });
+  let totalLen = 0;
+  for (const enc of encodedItems) totalLen += enc.length;
+  const prefix = rlpEncodeLength(totalLen, 0xc0);
+  const result = new Uint8Array(prefix.length + totalLen);
+  result.set(prefix, 0);
+  let offset = prefix.length;
+  for (const enc of encodedItems) {
+    result.set(enc, offset);
+    offset += enc.length;
+  }
+  return result;
+}
+
+// ============================================================
+// Chain State Management
+// ============================================================
 const SUPPORTED_METHODS = new Set([
   'eth_blockNumber','eth_chainId','net_version','eth_gasPrice',
   'net_listening','eth_mining','eth_syncing','web3_clientVersion',
@@ -41,7 +390,6 @@ function rHex(len) { let s=""; for(let i=0;i<len;i++) s+="0123456789abcdef"[Math
 function rHash64() { return "0x" + rHex(64); }
 
 // Build deterministic chain state
-// Genesis time = now - 500 blocks * 3s, so latest block is ~now
 if (!globalThis._chainState) {
   const rng = seededRng(8848);
   const state = { blocks: [], transactions: [], blockNumber: 0, pendingTx: [], txHashMap: {}, accounts: [] };
@@ -70,7 +418,6 @@ if (!globalThis._chainState) {
     const txs = [];
     for (let i = 0; i < txCount; i++) txs.push(createTx(n, i));
     const hash = rng.hash64();
-    // Timestamp in SECONDS (Ethereum spec), latest block ≈ now
     const ts = Math.floor(Date.now() / 1000) - (500 - n) * BLOCK_TIME;
     const gasUsed = BigInt(rng.int(500000, parseInt("0x1c9c380", 16)));
     const miner = rng.pick(state.accounts);
@@ -92,7 +439,7 @@ if (!globalThis._chainState) {
       timestamp: "0x" + ts.toString(16),
       transactions: txs.map(t => t.hash),
       uncles: [],
-      mixHash: rng.hash64()  // no double 0x - hash64() already includes 0x
+      mixHash: rng.hash64()
     };
     txs.forEach(t => { t.blockHash = hash; state.transactions.push(t); state.txHashMap[t.hash] = t; });
     state.blocks.push(block);
@@ -129,7 +476,6 @@ function mineNewBlock() {
     txs.push({ hash, nonce:"0x"+Math.floor(Math.random()*100).toString(16), blockHash:null, blockNumber:"0x"+n.toString(16), transactionIndex:"0x"+txs.length.toString(16), from, to, value:"0x"+val.toString(16), gas:"0x"+gas.toString(16), gasPrice:"0x"+gp.toString(16), input:"0x" });
   }
   const hash = rHash64();
-  // Dynamic timestamp: latest block is always "now"
   const ts = Math.floor(Date.now() / 1000);
   const gasUsed = txs.reduce((sum,t) => sum + BigInt(t.gas), BigInt(0));
   const miner = acc[Math.floor(Math.random()*acc.length)];
@@ -157,16 +503,77 @@ function mineNewBlock() {
   s.blockNumber = n;
 }
 
-// Helper to ensure block timestamps are recent and in seconds
 function fixBlockTimestamp(blockNumber, storedTimestamp) {
   const s = globalThis._chainState;
   const now = Math.floor(Date.now() / 1000);
-  // How many blocks behind the latest this block is
   const blockAge = s.blockNumber - blockNumber;
-  // Latest block should be ~now, earlier blocks proportionally earlier
   return "0x" + Math.max(0, now - blockAge * BLOCK_TIME).toString(16);
 }
 
+// ============================================================
+// Deterministic fallback: generate tx/receipt from hash
+// (for cross-isolate persistence - different Worker isolate)
+// ============================================================
+function hashSeedRng(hashStr) {
+  // Create a deterministic seed from hash string
+  let seed = 0;
+  for (let i = 0; i < hashStr.length; i++) {
+    seed = ((seed << 5) - seed + hashStr.charCodeAt(i)) | 0;
+  }
+  return mulberry32(Math.abs(seed));
+}
+
+function generateFallbackReceipt(txHash) {
+  // Generate a deterministic success receipt from any hash
+  const rng = hashSeedRng(txHash);
+  const s = globalThis._chainState;
+  const blockNum = s.blockNumber - Math.floor(rng() * 3); // recent block
+  const blockHash = s.blocks[blockNum] ? s.blocks[blockNum].hash : rHash64();
+  return {
+    transactionHash: txHash,
+    transactionIndex: "0x" + Math.floor(rng() * 5).toString(16),
+    blockHash: blockHash,
+    blockNumber: "0x" + blockNum.toString(16),
+    from: "0x" + rHex(40),
+    to: "0x" + rHex(40),
+    cumulativeGasUsed: "0x5208",
+    effectiveGasPrice: "0x3b9aca00",
+    gasUsed: "0x5208",
+    contractAddress: null,
+    logs: [],
+    logsBloom: "0x" + "0".repeat(512),
+    root: null,
+    status: "0x1",
+    type: "0x2"
+  };
+}
+
+function generateFallbackTx(txHash) {
+  const rng = hashSeedRng(txHash);
+  const s = globalThis._chainState;
+  const blockNum = s.blockNumber - Math.floor(rng() * 3);
+  const blockHash = s.blocks[blockNum] ? s.blocks[blockNum].hash : rHash64();
+  return {
+    hash: txHash,
+    nonce: "0x" + Math.floor(rng() * 100).toString(16),
+    blockHash: blockHash,
+    blockNumber: "0x" + blockNum.toString(16),
+    transactionIndex: "0x" + Math.floor(rng() * 5).toString(16),
+    from: "0x" + rHex(40),
+    to: "0x" + rHex(40),
+    value: "0x" + (BigInt(Math.floor(rng() * 100000)) * BigInt(10**15)).toString(16),
+    gas: "0x5208",
+    gasPrice: "0x3b9aca00",
+    input: "0x",
+    type: "0x2",
+    maxFeePerGas: "0x77359400",
+    maxPriorityFeePerGas: "0x3b9aca00"
+  };
+}
+
+// ============================================================
+// RPC Handler
+// ============================================================
 function handleRPC(method, params) {
   const s = globalThis._chainState;
 
@@ -201,37 +608,81 @@ function handleRPC(method, params) {
       return "0x" + count.toString(16);
     }
 
-    case "eth_sendTransaction":
-    case "eth_sendRawTransaction": {
-      const input = params[0] || "";
-      let from, to, value, gas, gasPrice, txData;
-      if (typeof input === 'object' && (input.from || input.to)) {
-        from = input.from || "0x" + rHex(40);
-        to = input.to || null;
-        value = input.value || "0x0";
-        gas = input.gas || input.gasLimit || "0x5208";
-        gasPrice = input.gasPrice || "0x3b9aca00";
-        txData = input.data || input.input || "0x";
-      } else if (typeof input === 'string') {
-        try {
-          const parsed = input.startsWith('{') ? JSON.parse(input) : null;
-          if (parsed && (parsed.from || parsed.to)) {
-            from = parsed.from; to = parsed.to || null; value = parsed.value || "0x0";
-            gas = parsed.gas || "0x5208"; gasPrice = parsed.gasPrice || "0x3b9aca00"; txData = parsed.data || "0x";
-          } else { from = "0x" + rHex(40); to = "0x" + rHex(40); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x"; }
-        } catch(e) { from = "0x" + rHex(40); to = "0x" + rHex(40); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x"; }
-      } else {
-        from = "0x" + rHex(40); to = "0x" + rHex(40); value = "0x0"; gas = "0x5208"; gasPrice = "0x3b9aca00"; txData = "0x";
-      }
+    case "eth_sendTransaction": {
+      const input = params[0] || {};
+      const from = input.from || "0x" + rHex(40);
+      const to = input.to || "0x" + rHex(40);
+      const value = input.value || "0x0";
+      const gas = input.gas || input.gasLimit || "0x5208";
+      const gasPrice = input.gasPrice || "0x3b9aca00";
+      const txData = input.data || input.input || "0x";
       const hash = rHash64();
       const tx = {
         hash, nonce: "0x0", blockHash: null, blockNumber: null, transactionIndex: null,
         from, to, value: String(value), gas: String(gas), gasPrice: String(gasPrice),
-        input: txData || "0x"
+        input: txData || "0x", type: "0x2"
       };
       s.pendingTx.push(tx);
       s.txHashMap[hash] = tx;
       mineNewBlock();
+      return hash;
+    }
+
+    case "eth_sendRawTransaction": {
+      const rawHex = params[0] || "";
+      if (typeof rawHex !== 'string' || rawHex.length < 4) {
+        throw new Error("Invalid raw transaction");
+      }
+      
+      // Try to decode the raw transaction using our RLP decoder
+      let decoded = null;
+      try {
+        decoded = decodeRawTransaction(rawHex);
+      } catch(e) {
+        console.log("Raw tx decode error:", e.message);
+      }
+      
+      let hash, tx;
+      
+      if (decoded && decoded.hash) {
+        // Successfully decoded - use real hash
+        hash = decoded.hash;
+        tx = {
+          hash: decoded.hash,
+          nonce: decoded.nonce || "0x0",
+          blockHash: null,
+          blockNumber: null,
+          transactionIndex: null,
+          from: decoded.from || "0x" + rHex(40),
+          to: decoded.to || "0x" + rHex(40),
+          value: decoded.value || "0x0",
+          gas: decoded.gas || "0x5208",
+          gasPrice: decoded.gasPrice || decoded.maxFeePerGas || "0x3b9aca00",
+          maxFeePerGas: decoded.maxFeePerGas || decoded.gasPrice || "0x77359400",
+          maxPriorityFeePerGas: decoded.maxPriorityFeePerGas || "0x3b9aca00",
+          input: decoded.input || "0x",
+          type: decoded.type || "0x2",
+          v: decoded.v, r: decoded.r, s: decoded.s
+        };
+      } else {
+        // Fallback: can't decode, generate hash from raw data
+        // Use SHA-256 as fallback hash (won't match MetaMask's expected keccak256 hash,
+        // but this is a last resort)
+        console.log("WARNING: Could not decode raw transaction, using fallback");
+        hash = rHash64();
+        tx = {
+          hash, nonce: "0x0", blockHash: null, blockNumber: null, transactionIndex: null,
+          from: "0x" + rHex(40), to: "0x" + rHex(40), value: "0x0",
+          gas: "0x5208", gasPrice: "0x3b9aca00", input: "0x", type: "0x2"
+        };
+      }
+      
+      // Store tx and immediately mine it into a block
+      s.pendingTx.push(tx);
+      s.txHashMap[hash] = tx;
+      mineNewBlock();
+      
+      // After mining, the tx should have blockHash, blockNumber set
       return hash;
     }
 
@@ -269,15 +720,52 @@ function handleRPC(method, params) {
     }
 
     case "eth_getTransactionByHash": {
-      const tx = s.txHashMap[params[0]] || s.transactions.find(t => t.hash === params[0]);
-      if (!tx) return null;
-      return {...tx};
+      const txHash = params[0];
+      // Check our state first
+      const tx = s.txHashMap[txHash] || s.transactions.find(t => t.hash === txHash);
+      if (tx) return {...tx};
+      // Cross-isolate fallback: generate deterministic tx from hash
+      return generateFallbackTx(txHash);
     }
 
     case "eth_getTransactionReceipt": {
-      const tx = s.txHashMap[params[0]] || s.transactions.find(t => t.hash === params[0]);
-      if (!tx || !tx.blockHash) return null;
-      return {...tx, contractAddress:null, cumulativeGasUsed:tx.gas, effectiveGasPrice:tx.gasPrice, logs:[], logsBloom:"0x"+"0".repeat(512), status:"0x1", type:tx.type||"0x0"};
+      const txHash = params[0];
+      // Check our state first
+      const tx = s.txHashMap[txHash] || s.transactions.find(t => t.hash === txHash);
+      if (tx && tx.blockHash) {
+        return {
+          ...tx,
+          transactionHash: txHash,
+          contractAddress: null,
+          cumulativeGasUsed: tx.gas,
+          effectiveGasPrice: tx.gasPrice || tx.maxFeePerGas || "0x3b9aca00",
+          gasUsed: tx.gas,
+          logs: [],
+          logsBloom: "0x" + "0".repeat(512),
+          status: "0x1",
+          type: tx.type || "0x2"
+        };
+      }
+      // Even if tx exists but not yet in a block, mine a block now
+      if (tx && !tx.blockHash) {
+        mineNewBlock();
+        const updated = s.txHashMap[txHash] || tx;
+        return {
+          ...updated,
+          transactionHash: txHash,
+          contractAddress: null,
+          cumulativeGasUsed: updated.gas || "0x5208",
+          effectiveGasPrice: updated.gasPrice || "0x3b9aca00",
+          gasUsed: updated.gas || "0x5208",
+          logs: [],
+          logsBloom: "0x" + "0".repeat(512),
+          status: "0x1",
+          type: updated.type || "0x2"
+        };
+      }
+      // Cross-isolate fallback: tx was sent on a different isolate
+      // Return a successful receipt so MetaMask sees the tx as confirmed
+      return generateFallbackReceipt(txHash);
     }
 
     case "eth_newBlockFilter": case "eth_newPendingTransactionFilter": case "eth_newFilter":
@@ -288,7 +776,7 @@ function handleRPC(method, params) {
       return [];
     case "eth_getFilterLogs": return [];
 
-    // EIP-1559 methods (needed by MetaMask)
+    // EIP-1559 methods
     case "eth_feeHistory": {
       const blockCount = Math.min(parseInt(params[0], 10) || 1, 1024);
       const newestBlock = params[1] === "latest" ? s.blockNumber : (parseInt(params[1],16)||s.blockNumber);
@@ -318,6 +806,9 @@ function handleRPC(method, params) {
   }
 }
 
+// ============================================================
+// Worker Entry Point
+// ============================================================
 export default {
   async fetch(request) {
     const CORS = {
@@ -344,9 +835,19 @@ export default {
       const method = rpc.method || "";
       const params = rpc.params || [];
 
+      // Occasionally mine new blocks for freshness
       if (Math.random() < 0.12) mineNewBlock();
 
-      const result = handleRPC(method, params);
+      let result;
+      try {
+        result = handleRPC(method, params);
+      } catch(e) {
+        return new Response(JSON.stringify({
+          jsonrpc: "2.0",
+          error: {code: -32000, message: e.message || "Internal error"},
+          id: rpc.id || null
+        }), {headers: {...CORS, ...JSON_HDR}});
+      }
 
       if (result === undefined) {
         return new Response(JSON.stringify({
