@@ -25,3 +25,29 @@ Stage Summary:
 - Explorer 前端已部署
 - 双钱包转账已验证通过
 - 注意: Geth 进程可能需要手动重启 (运行 chain-manager.py)
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: 在 Vultr VPS 上持久化部署 ExeChain Geth 节点
+
+Work Log:
+- 通过 Vultr API 成功发现已有 VPS 并创建新实例 (45.77.26.31, nrt, Debian 11, 1GB RAM)
+- 本地编译 Geth v1.13.15 (支持 Clique PoA) 并通过 SFTP 传输到 VPS
+- 创建两个新钱包账户:
+  - Wallet1 (Signer): 0x9ABD7f70f60E82B02e136E7A954cF0D050cA51c2 (100 EXE)
+  - Wallet2: 0xB9eA18f13196d98B5AaD8BA72cD59C42736D42ae (100 EXE)
+- 配置 Clique PoA 创世区块 (Chain ID 8848, 5s 出块, extradata 117 bytes)
+- 初始化链并启动 Geth 挖矿 (systemd 服务, 自动重启)
+- 安装并启动 Cloudflare Tunnel (rpc-internal.exepc.top → localhost:8545)
+- 验证端到端连通性:
+  - localhost RPC ✅
+  - Tunnel RPC (rpc-internal.exepc.top) ✅
+  - Worker RPC (rpc.exepc.top) ✅
+
+Stage Summary:
+- VPS IP: 45.77.26.31 (Tokyo, Vultr)
+- Geth v1.13.15 运行中, 持续挖矿
+- systemd 服务: exechain + exechain-tunnel (开机自启, 自动重启)
+- 密码: exechain2024
+- 钱包地址已更新 (与旧链不同)
