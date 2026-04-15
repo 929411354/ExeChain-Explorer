@@ -1,0 +1,62 @@
+WARN [04-15|12:37:54.664] Unclean shutdown detected                booted=2026-04-15T12:32:37+0000 age=5m17s
+WARN [04-15|12:37:54.664] Unclean shutdown detected                booted=2026-04-15T12:33:15+0000 age=4m39s
+WARN [04-15|12:37:54.664] Unclean shutdown detected                booted=2026-04-15T12:35:29+0000 age=2m25s
+WARN [04-15|12:37:54.664] Unclean shutdown detected                booted=2026-04-15T12:36:43+0000 age=1m11s
+WARN [04-15|12:37:54.664] Engine API enabled                       protocol=eth
+WARN [04-15|12:37:54.664] Engine API started but chain not configured for merge yet
+WARN [04-15|12:38:20.720] Unclean shutdown detected                booted=2026-04-15T12:32:37+0000 age=5m43s
+WARN [04-15|12:38:20.720] Unclean shutdown detected                booted=2026-04-15T12:33:15+0000 age=5m5s
+WARN [04-15|12:38:20.720] Unclean shutdown detected                booted=2026-04-15T12:35:29+0000 age=2m51s
+WARN [04-15|12:38:20.720] Unclean shutdown detected                booted=2026-04-15T12:36:43+0000 age=1m37s
+WARN [04-15|12:38:20.720] Unclean shutdown detected                booted=2026-04-15T12:37:54+0000 age=26s
+WARN [04-15|12:38:20.721] Engine API enabled                       protocol=eth
+WARN [04-15|12:38:20.721] Engine API started but chain not configured for merge yet
+Wed Apr 15 12:39:36 UTC 2026: Starting Geth...
+WARN [04-15|12:39:36.755] Unclean shutdown detected                booted=2026-04-15T12:32:37+0000 age=6m59s
+WARN [04-15|12:39:36.755] Unclean shutdown detected                booted=2026-04-15T12:33:15+0000 age=6m21s
+WARN [04-15|12:39:36.755] Unclean shutdown detected                booted=2026-04-15T12:35:29+0000 age=4m7s
+WARN [04-15|12:39:36.755] Unclean shutdown detected                booted=2026-04-15T12:36:43+0000 age=2m53s
+WARN [04-15|12:39:36.755] Unclean shutdown detected                booted=2026-04-15T12:37:54+0000 age=1m42s
+WARN [04-15|12:39:36.755] Unclean shutdown detected                booted=2026-04-15T12:38:20+0000 age=1m16s
+WARN [04-15|12:39:36.756] Engine API enabled                       protocol=eth
+WARN [04-15|12:39:36.756] Engine API started but chain not configured for merge yet
+WARN [04-15|12:40:59.448] Unclean shutdown detected                booted=2026-04-15T12:32:37+0000 age=8m22s
+WARN [04-15|12:40:59.455] Unclean shutdown detected                booted=2026-04-15T12:33:15+0000 age=7m44s
+WARN [04-15|12:40:59.455] Unclean shutdown detected                booted=2026-04-15T12:35:29+0000 age=5m30s
+WARN [04-15|12:40:59.455] Unclean shutdown detected                booted=2026-04-15T12:36:43+0000 age=4m16s
+WARN [04-15|12:40:59.455] Unclean shutdown detected                booted=2026-04-15T12:37:54+0000 age=3m5s
+WARN [04-15|12:40:59.455] Unclean shutdown detected                booted=2026-04-15T12:38:20+0000 age=2m39s
+WARN [04-15|12:40:59.455] Unclean shutdown detected                booted=2026-04-15T12:39:36+0000 age=1m23s
+WARN [04-15|12:40:59.456] Engine API enabled                       protocol=eth
+WARN [04-15|12:40:59.456] Engine API started but chain not configured for merge yet
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:32:37+0000 age=9m40s
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:33:15+0000 age=9m2s
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:35:29+0000 age=6m48s
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:36:43+0000 age=5m34s
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:37:54+0000 age=4m23s
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:38:20+0000 age=3m57s
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:39:36+0000 age=2m41s
+WARN [04-15|12:42:17.894] Unclean shutdown detected                booted=2026-04-15T12:40:59+0000 age=1m18s
+WARN [04-15|12:42:17.894] Engine API enabled                       protocol=eth
+WARN [04-15|12:42:17.894] Engine API started but chain not configured for merge yet
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:32:37+0000 age=10m54s
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:33:15+0000 age=10m16s
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:35:29+0000 age=8m2s
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:36:43+0000 age=6m48s
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:37:54+0000 age=5m37s
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:38:20+0000 age=5m11s
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:39:36+0000 age=3m55s
+WARN [04-15|12:43:31.091] Unclean shutdown detected                booted=2026-04-15T12:40:59+0000 age=2m32s
+WARN [04-15|12:43:31.091] Engine API enabled                       protocol=eth
+WARN [04-15|12:43:31.091] Engine API started but chain not configured for merge yet
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:32:37+0000 age=11m26s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:33:15+0000 age=10m48s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:35:29+0000 age=8m34s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:36:43+0000 age=7m20s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:37:54+0000 age=6m9s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:38:20+0000 age=5m43s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:39:36+0000 age=4m27s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:40:59+0000 age=3m4s
+WARN [04-15|12:44:03.179] Unclean shutdown detected                booted=2026-04-15T12:43:31+0000 age=32s
+WARN [04-15|12:44:03.180] Engine API enabled                       protocol=eth
+WARN [04-15|12:44:03.180] Engine API started but chain not configured for merge yet
