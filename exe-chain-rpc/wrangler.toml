@@ -1,0 +1,7 @@
+name = "exe-chain-api"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[[routes]]
+pattern = "rpc.exepc.top"
+custom_domain = true

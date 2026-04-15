@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exe Chain Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-primary: #0a0e17; --bg-secondary: #111827; --bg-card: #1a2234; --bg-card-hover: #1f2a40;
+      --bg-input: #0f1623; --border: #2a3548; --border-light: #1e293b;
+      --text-primary: #e2e8f0; --text-secondary: #94a3b8; --text-muted: #64748b;
+      --accent: #22d3ee; --accent-dim: rgba(34,211,238,0.1);
+      --accent-green: #10b981; --accent-red: #ef4444; --accent-orange: #f59e0b; --accent-purple: #a78bfa;
+      --radius: 8px; --radius-lg: 12px; --shadow: 0 4px 24px rgba(0,0,0,0.3);
+      --font-mono: 'JetBrains Mono', monospace; --font-sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body { font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+
+    .navbar { position: sticky; top: 0; z-index: 100; background: rgba(10,14,23,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-light); padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+    .nav-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text-primary); cursor: pointer; }
+    .nav-logo { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent), #6366f1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; font-family: var(--font-mono); }
+    .nav-title { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+    .nav-title span { color: var(--accent); }
+    .nav-links { display: flex; gap: 8px; align-items: center; }
+    .nav-links a, .nav-links button { color: var(--text-secondary); text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 14px; border-radius: var(--radius); transition: all 0.2s; background: none; border: none; cursor: pointer; font-family: var(--font-sans); }
+    .nav-links a:hover, .nav-links button:hover { color: var(--text-primary); background: var(--bg-card); }
+    .nav-links .btn-send { background: var(--accent); color: var(--bg-primary); font-weight: 600; }
+    .nav-links .btn-send:hover { opacity: 0.85; color: var(--bg-primary); }
+
+    .search-container { max-width: 720px; margin: 32px auto 0; padding: 0 24px; text-align: center; }
+    .search-hero-title { font-size: 28px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.03em; }
+    .search-hero-sub { color: var(--text-secondary); font-size: 15px; margin-bottom: 20px; }
+    .search-bar { display: flex; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; transition: border-color 0.2s; }
+    .search-bar:focus-within { border-color: var(--accent); }
+    .search-bar input { flex: 1; background: transparent; border: none; outline: none; color: var(--text-primary); font-family: var(--font-mono); font-size: 14px; padding: 14px 20px; }
+    .search-bar input::placeholder { color: var(--text-muted); }
+    .search-bar button { background: var(--accent); color: var(--bg-primary); border: none; padding: 14px 28px; font-weight: 600; font-size: 14px; cursor: pointer; font-family: var(--font-sans); transition: opacity 0.2s; }
+    .search-bar button:hover { opacity: 0.85; }
+
+    .status-bar { display: flex; gap: 24px; justify-content: center; margin: 24px auto 0; padding: 0 24px; flex-wrap: wrap; }
+    .status-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); animation: pulse-dot 2s infinite; }
+    .status-dot.offline { background: var(--accent-red); animation: none; }
+    @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .status-value { color: var(--text-primary); font-weight: 600; font-family: var(--font-mono); }
+
+    .main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .section-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .section-title::before { content: ''; width: 4px; height: 20px; background: var(--accent); border-radius: 2px; }
+
+    .card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); overflow: hidden; }
+    .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; justify-content: space-between; }
+    .card-body { padding: 0; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 1px solid var(--border-light); white-space: nowrap; }
+    td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--border-light); white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg-card-hover); }
+
+    .hash { font-family: var(--font-mono); font-size: 13px; color: var(--accent); cursor: pointer; transition: color 0.2s; }
+    .hash:hover { color: #67e8f9; text-decoration: underline; }
+    .hash-long { max-width: 180px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+
+    .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge-success { background: rgba(16,185,129,0.12); color: var(--accent-green); }
+    .badge-failed { background: rgba(239,68,68,0.12); color: var(--accent-red); }
+
+    .detail-header { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 24px; }
+    .detail-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 6px; }
+    .detail-hash { font-family: var(--font-mono); font-size: 15px; word-break: break-all; line-height: 1.8; }
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0; margin-top: 20px; border-top: 1px solid var(--border-light); }
+    .detail-field { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-light); font-size: 14px; }
+    .detail-field-label { color: var(--text-secondary); }
+    .detail-field-value { font-weight: 500; font-family: var(--font-mono); font-size: 13px; text-align: right; max-width: 60%; word-break: break-all; }
+
+    .mini-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .mini-stat { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 20px; }
+    .mini-stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .mini-stat-value { font-size: 24px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+    .mini-stat-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+    .block-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: var(--accent-dim); border-radius: var(--radius); color: var(--accent); font-weight: 700; font-size: 14px; margin-right: 8px; }
+    .tx-type-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font-size: 14px; margin-right: 8px; flex-shrink: 0; }
+    .tx-out { background: rgba(16,185,129,0.12); color: var(--accent-green); }
+    .tx-contract { background: rgba(167,139,250,0.12); color: var(--accent-purple); }
+    .arrow-right { display: inline-flex; align-items: center; color: var(--text-muted); margin: 0 8px; font-size: 16px; }
+
+    .gas-bar { display: flex; align-items: center; gap: 8px; }
+    .gas-indicator { width: 60px; height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden; }
+    .gas-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+    .gas-low { background: var(--accent-green); }
+    .gas-medium { background: var(--accent-orange); }
+    .gas-high { background: var(--accent-red); }
+    .value-exe { color: var(--text-primary); font-family: var(--font-mono); font-weight: 500; }
+    .value-exe::after { content: ' EXE'; color: var(--text-muted); font-size: 12px; margin-left: 4px; }
+    .value-sm { color: var(--text-secondary); font-family: var(--font-mono); font-size: 13px; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 200; display: none; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; width: 90%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+    .modal-title { font-size: 20px; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
+    .modal-close { background: none; border: none; color: var(--text-muted); font-size: 24px; cursor: pointer; padding: 4px 8px; }
+    .modal-close:hover { color: var(--text-primary); }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+    .form-input { width: 100%; padding: 12px 16px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-primary); font-family: var(--font-mono); font-size: 14px; outline: none; transition: border-color 0.2s; }
+    .form-input:focus { border-color: var(--accent); }
+    .form-input::placeholder { color: var(--text-muted); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .btn-primary { width: 100%; padding: 14px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: var(--radius); font-size: 15px; font-weight: 700; cursor: pointer; font-family: var(--font-sans); transition: opacity 0.2s; margin-top: 8px; }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tx-result { margin-top: 16px; padding: 16px; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--radius); display: none; }
+    .tx-result.show { display: block; }
+    .tx-result-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .tx-result-hash { font-family: var(--font-mono); font-size: 13px; color: var(--accent); word-break: break-all; cursor: pointer; }
+
+    #view-home, #view-block, #view-tx, #view-address { display: none; }
+    #view-home.active, #view-block.active, #view-tx.active, #view-address.active { display: block; }
+
+    .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text-muted); }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--accent); border-radius: var(--radius); padding: 12px 24px; font-size: 14px; color: var(--accent); z-index: 1000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+    .toast.show { opacity: 1; }
+    .footer { text-align: center; padding: 32px 24px; border-top: 1px solid var(--border-light); color: var(--text-muted); font-size: 13px; }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 768px) {
+      .navbar { padding: 0 16px; height: 56px; }
+      .nav-title { font-size: 15px; }
+      .nav-links a, .nav-links button { padding: 6px 10px; font-size: 13px; }
+      .search-hero-title { font-size: 22px; }
+      .mini-stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .mini-stat-value { font-size: 18px; }
+      .detail-grid { grid-template-columns: 1fr; }
+      th, td { padding: 10px 12px; }
+      .hash-long { max-width: 120px; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .nav-links button.btn-send { padding: 6px 10px; font-size: 12px; }
+      .search-hero-sub { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand" onclick="navigateTo('home')">
+      <div class="nav-logo">EX</div>
+      <div class="nav-title">Exe<span>Chain</span></div>
+    </div>
+    <div class="nav-links">
+      <a onclick="navigateTo('home')">Home</a>
+      <button class="btn-send" onclick="openSendModal()">+ Send</button>
+    </div>
+  </nav>
+
+  <div class="search-container">
+    <div class="search-hero-title">Exe Chain Explorer</div>
+    <div class="search-hero-sub">Search blocks, transactions, addresses on Exe Chain</div>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Block / Tx Hash / Address" onkeydown="if(event.key==='Enter') doSearch()">
+      <button onclick="doSearch()">Search</button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-item"><div class="status-dot" id="statusDot"></div><span>Network:</span><span class="status-value">Exe Chain</span></div>
+    <div class="status-item"><span>Block:</span><span class="status-value" id="statusBlock">--</span></div>
+    <div class="status-item"><span>Gas:</span><span class="status-value" id="statusGas">--</span><span>Gwei</span></div>
+    <div class="status-item"><span>Chain ID:</span><span class="status-value">8848</span></div>
+  </div>
+
+  <div class="main">
+    <div id="view-home" class="active">
+      <div class="mini-stats">
+        <div class="mini-stat"><div class="mini-stat-label">Latest Block</div><div class="mini-stat-value" id="statBlock">--</div><div class="mini-stat-sub">~3s block time</div></div>
+        <div class="mini-stat"><div class="mini-stat-label">Gas Price</div><div class="mini-stat-value" id="statGas">--</div><div class="mini-stat-sub">Gwei</div></div>
+        <div class="mini-stat"><div class="mini-stat-label">Total Blocks</div><div class="mini-stat-value" id="statTotalBlocks">--</div><div class="mini-stat-sub">since genesis</div></div>
+        <div class="mini-stat"><div class="mini-stat-label">Status</div><div class="mini-stat-value" style="font-size:16px;color:var(--accent-green);" id="statStatus">Connecting...</div><div class="mini-stat-sub">Clique PoA</div></div>
+      </div>
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header"><div class="section-title">Latest Blocks</div></div>
+        <div class="card-body"><div class="table-wrap"><table><thead><tr><th>Block</th><th>Age</th><th>Txns</th><th>Miner</th><th>Gas Used</th><th>Gas Limit</th></tr></thead><tbody id="blocksTable"><tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr></tbody></table></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="section-title">Latest Transactions</div></div>
+        <div class="card-body"><div class="table-wrap"><table><thead><tr><th>Tx Hash</th><th>Block</th><th>Age</th><th>From / To</th><th>Value</th><th>Status</th></tr></thead><tbody id="txTable"><tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr></tbody></table></div></div>
+      </div>
+    </div>
+    <div id="view-block">
+      <div class="detail-header" id="blockDetail"></div>
+      <div class="card"><div class="card-header"><div class="section-title">Transactions</div><span id="blockTxCount" style="font-size:13px;color:var(--text-muted);"></span></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>Tx Hash</th><th>From</th><th>To</th><th>Value</th><th>Gas Used</th><th>Status</th></tr></thead><tbody id="blockTxTable"></tbody></table></div></div>
+      </div>
+    </div>
+    <div id="view-tx">
+      <div class="detail-header" id="txDetail"></div>
+      <div class="card" style="margin-bottom:24px;"><div class="card-header"><div class="section-title">Logs</div></div><div class="card-body"><div id="txLogs"></div></div></div>
+    </div>
+    <div id="view-address">
+      <div class="detail-header" id="addressDetail"></div>
+      <div class="card"><div class="card-header"><div class="section-title">Transactions</div></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>Tx Hash</th><th>Block</th><th>Age</th><th>Direction</th><th>Value</th><th>Status</th></tr></thead><tbody id="addressTxTable"></tbody></table></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Send Transaction Modal -->
+  <div class="modal-overlay" id="sendModal">
+    <div class="modal">
+      <div class="modal-title"><span>Send Transaction</span><button class="modal-close" onclick="closeSendModal()">&times;</button></div>
+      <div class="form-group"><label class="form-label">From Address</label><input class="form-input" id="sendFrom" placeholder="0x... (optional)"><div class="form-hint">Sender address (leave blank for auto)</div></div>
+      <div class="form-group"><label class="form-label">To Address</label><input class="form-input" id="sendTo" placeholder="0x..."><div class="form-hint">Recipient address</div></div>
+      <div class="form-group"><label class="form-label">Amount (EXE)</label><input class="form-input" id="sendValue" type="number" step="0.0001" min="0" placeholder="1.0"><div class="form-hint">Amount in EXE to send</div></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Gas Limit</label><input class="form-input" id="sendGas" value="21000" readonly><div class="form-hint">Standard transfer</div></div>
+        <div class="form-group"><label class="form-label">Gas Price (Gwei)</label><input class="form-input" id="sendGasPrice" value="1.0"><div class="form-hint">1 Gwei = 1,000,000,000 Wei</div></div>
+      </div>
+      <button class="btn-primary" id="sendBtn" onclick="sendTransaction()">Send Transaction</button>
+      <div class="tx-result" id="txResult">
+        <div class="tx-result-label">Transaction Hash</div>
+        <div class="tx-result-hash" id="txResultHash"></div>
+        <div style="margin-top:8px;font-size:13px;color:var(--text-secondary);">Click hash to copy &bull; <a class="hash" id="txResultLink" style="font-size:13px;">View Transaction</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">Exe Chain Explorer &mdash; Chain ID 8848 &mdash; Clique PoA Consensus &mdash; Powered by <a href="https://www.cloudflare.com/" target="_blank">Cloudflare</a></div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const RPC_ENDPOINTS = ['https://rpc.exepc.top'];
+
+    function shortHash(h, c=10) { if(!h)return'--'; return h.slice(0,c)+'...'+h.slice(-6); }
+    function timeAgo(ts) { if(!ts)return'--'; const d=Math.floor(Date.now()/1000)-Math.floor(ts/1000); if(d<5)return'just now'; if(d<60)return d+'s ago'; if(d<3600)return Math.floor(d/60)+'m ago'; if(d<86400)return Math.floor(d/3600)+'h ago'; return Math.floor(d/86400)+'d ago'; }
+    function formatNumber(n) { return n===null||n===undefined?'--':n.toLocaleString(); }
+    function gasPercent(u,l) { return !u||!l?0:Math.round((u/l)*100); }
+    function gasClass(p) { return p<30?'gas-low':p<70?'gas-medium':'gas-high'; }
+    function showToast(msg) { const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2500); }
+    function copyText(t) { navigator.clipboard.writeText(t).then(()=>showToast('Copied!')).catch(()=>showToast('Copy failed')); }
+    function escAttr(s) { return String(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;'); }
+
+    // ===== URL hash routing =====
+    function navigateTo(view, param) {
+      document.querySelectorAll('[id^="view-"]').forEach(v=>v.classList.remove('active'));
+      const el = document.getElementById('view-'+view);
+      if (!el) { console.error('View not found:', view); return; }
+      el.classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+      // Update URL hash for sharing/bookmarking
+      if (param) {
+        window.location.hash = view + '/' + param;
+      } else {
+        window.location.hash = '';
+      }
+      if (view==='block'&&param) loadBlock(param);
+      else if (view==='tx'&&param) loadTransaction(param);
+      else if (view==='address'&&param) loadAddress(param);
+      else if (view==='home') loadHome();
+    }
+
+    function parseHashRoute() {
+      const hash = window.location.hash.slice(1); // remove #
+      if (!hash) return;
+      const parts = hash.split('/');
+      const view = parts[0];
+      const param = parts.slice(1).join('/');
+      if (['block','tx','address'].includes(view) && param) {
+        navigateTo(view, param);
+      }
+    }
+
+    window.addEventListener('hashchange', parseHashRoute);
+
+    function doSearch() {
+      const q=document.getElementById('searchInput').value.trim();
+      if(!q)return;
+      if(/^\d+$/.test(q)){navigateTo('block',q);return;}
+      if(/^0x[a-fA-F0-9]{64}$/.test(q)){navigateTo('tx',q);return;}
+      if(/^0x[a-fA-F0-9]{40}$/.test(q)){navigateTo('address',q);return;}
+      showToast('Invalid input');
+    }
+
+    async function rpcCall(method, params=[]) {
+      const payload=JSON.stringify({jsonrpc:'2.0',method,params,id:Date.now()});
+      for(const ep of RPC_ENDPOINTS) {
+        try {
+          const res=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
+          if(!res.ok) continue;
+          const data=await res.json();
+          if(data.result!==undefined||data.error) return data;
+        } catch(e){continue;}
+      }
+      return {error:{message:'RPC unavailable'}};
+    }
+
+    function hexDec(h){if(!h)return 0;return parseInt(h,16);}
+    function weiToExe(w){if(!w)return'0';const v=BigInt(w),d=BigInt(10**18),i=v/d,f=v%d,fs=f.toString().padStart(18,'0').slice(0,6).replace(/0+$/,'');return fs?`${i}.${fs}`:i.toString();}
+    function weiToGwei(w){if(!w)return'0';return(Number(w)/1e9).toFixed(2);}
+
+    // === LOAD HOME ===
+    async function loadHome() {
+      try {
+        const [blockNum,gasPrice]=await Promise.all([rpcCall('eth_blockNumber'),rpcCall('eth_gasPrice')]);
+        const n=hexDec(blockNum.result);
+        document.getElementById('statBlock').textContent=formatNumber(n);
+        document.getElementById('statGas').textContent=weiToGwei(gasPrice.result);
+        document.getElementById('statTotalBlocks').textContent=formatNumber(n);
+        document.getElementById('statStatus').textContent='Synced';
+        document.getElementById('statStatus').style.color='var(--accent-green)';
+        document.getElementById('statusBlock').textContent=formatNumber(n);
+        document.getElementById('statusGas').textContent=weiToGwei(gasPrice.result)+' Gwei';
+        document.getElementById('statusDot').classList.remove('offline');
+        loadBlocks(n);
+        loadLatestTransactions(n);
+      } catch(e) {
+        document.getElementById('statStatus').textContent='Offline';
+        document.getElementById('statStatus').style.color='var(--accent-red)';
+        document.getElementById('statusDot').classList.add('offline');
+      }
+    }
+
+    function txStatusBadge(receipt) {
+      if(receipt&&receipt.result){ return hexDec(receipt.result.status)===1?'<span class="badge badge-success">Success</span>':'<span class="badge badge-failed">Failed</span>'; }
+      return '<span class="badge" style="background:var(--bg-input);color:var(--text-muted);">Pending</span>';
+    }
+
+    async function loadBlocks(n) {
+      const tbody=document.getElementById('blocksTable');
+      const promises=[];
+      for(let i=0;i<10;i++) promises.push(rpcCall('eth_getBlockByNumber',['0x'+(n-i).toString(16),false]));
+      const results=await Promise.all(promises);
+      let html='';
+      for(const r of results){
+        const b=r.result; if(!b)continue;
+        const gp=gasPercent(hexDec(b.gasUsed),hexDec(b.gasLimit));
+        const gc=gasClass(gp);
+        const txLen=Array.isArray(b.transactions)?b.transactions.length:0;
+        html+=`<tr>
+          <td><span class="block-icon">#${hexDec(b.number)}</span><a class="hash" onclick="navigateTo('block','${hexDec(b.number)}')">${hexDec(b.number)}</a></td>
+          <td class="value-sm">${timeAgo(hexDec(b.timestamp)*1000)}</td>
+          <td><span class="value-exe">${txLen}</span></td>
+          <td><span class="hash hash-long" onclick="navigateTo('address','${escAttr(b.miner)}')">${shortHash(b.miner)}</span></td>
+          <td><div class="gas-bar"><div class="gas-indicator"><div class="gas-fill ${gc}" style="width:${gp}%"></div></div><span class="value-sm">${formatNumber(hexDec(b.gasUsed))}</span></div></td>
+          <td class="value-sm">${formatNumber(hexDec(b.gasLimit))}</td>
+        </tr>`;
+      }
+      tbody.innerHTML=html||'<tr><td colspan="6"><div class="empty">No blocks</div></td></tr>';
+    }
+
+    async function loadLatestTransactions(n) {
+      const tbody=document.getElementById('txTable');
+      const txs=[];
+      for(let i=0;i<5&&txs.length<15;i++){
+        const res=await rpcCall('eth_getBlockByNumber',['0x'+(n-i).toString(16),true]);
+        const block=res.result; if(!block||!block.transactions)continue;
+        for(const tx of block.transactions){if(txs.length>=15)break;txs.push({tx,blockTimestamp:hexDec(block.timestamp)*1000});}
+      }
+      let html='';
+      for(const item of txs){
+        const tx=item.tx;
+        const receipt=await rpcCall('eth_getTransactionReceipt',[tx.hash]);
+        const isContract=!tx.to;
+        html+=`<tr>
+          <td><span class="hash hash-long" onclick="navigateTo('tx','${escAttr(tx.hash)}')">${shortHash(tx.hash,8)}</span></td>
+          <td><a class="hash" onclick="navigateTo('block','${hexDec(tx.blockNumber)}')">${hexDec(tx.blockNumber)}</a></td>
+          <td class="value-sm">${timeAgo(item.blockTimestamp)}</td>
+          <td><span class="tx-type-icon ${isContract?'tx-contract':'tx-out'}">${isContract?'+':'\u2192'}</span><span class="hash" style="font-size:12px;" onclick="navigateTo('address','${escAttr(tx.from)}')">${shortHash(tx.from,6)}</span><span class="arrow-right">\u2192</span><span class="hash" style="font-size:12px;" onclick="navigateTo('address','${tx.to?escAttr(tx.to):''}')">${tx.to?shortHash(tx.to,6):'Contract'}</span></td>
+          <td><span class="value-exe">${weiToExe(tx.value)}</span></td>
+          <td>${txStatusBadge(receipt)}</td>
+        </tr>`;
+      }
+      tbody.innerHTML=html||'<tr><td colspan="6"><div class="empty">No transactions</div></td></tr>';
+    }
+
+    async function loadBlock(id) {
+      const detail=document.getElementById('blockDetail');
+      detail.innerHTML='<div class="loading"><div class="spinner"></div>Loading block...</div>';
+      const param=id.startsWith('0x')?id:'0x'+parseInt(id).toString(16);
+      const res=await rpcCall('eth_getBlockByNumber',[param,false]);
+      const block=res.result;
+      if(!block){detail.innerHTML='<div class="empty"><div class="empty-icon">&#x26A0;</div>Block not found</div>';return;}
+      const gp=gasPercent(hexDec(block.gasUsed),hexDec(block.gasLimit));
+      const gc=gasClass(gp);
+      const txCount=Array.isArray(block.transactions)?block.transactions.length:0;
+      detail.innerHTML=`
+        <div class="detail-label">Block #${hexDec(block.number)}</div>
+        <div class="detail-grid">
+          <div class="detail-field"><span class="detail-field-label">Timestamp</span><span class="detail-field-value">${new Date(hexDec(block.timestamp)*1000).toLocaleString()}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Transactions</span><span class="detail-field-value">${txCount}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Miner</span><span class="detail-field-value"><a class="hash" onclick="navigateTo('address','${escAttr(block.miner)}')">${shortHash(block.miner)}</a></span></div>
+          <div class="detail-field"><span class="detail-field-label">Gas Used</span><span class="detail-field-value">${formatNumber(hexDec(block.gasUsed))} / ${formatNumber(hexDec(block.gasLimit))} (${gp}%)</span></div>
+          <div class="detail-field"><span class="detail-field-label">Hash</span><span class="detail-field-value" style="max-width:70%;">${block.hash}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Parent Hash</span><span class="detail-field-value" style="max-width:70%;"><a class="hash" onclick="navigateTo('block','${hexDec(block.number)-1}')">${shortHash(block.parentHash,12)}</a></span></div>
+          <div class="detail-field"><span class="detail-field-label">Size</span><span class="detail-field-value">${formatNumber(hexDec(block.size))} bytes</span></div>
+          <div class="detail-field"><span class="detail-field-label">Nonce</span><span class="detail-field-value">${block.nonce}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Extra Data</span><span class="detail-field-value" style="max-width:60%;">${block.extraData}</span></div>
+        </div>`;
+      document.getElementById('blockTxCount').textContent=txCount+' transactions';
+      const full=await rpcCall('eth_getBlockByNumber',[param,true]);
+      const bf=full.result;
+      const ttx=document.getElementById('blockTxTable');
+      if(bf&&bf.transactions){
+        let th='';
+        for(const tx of bf.transactions){
+          const receipt=await rpcCall('eth_getTransactionReceipt',[tx.hash]);
+          th+=`<tr>
+            <td><span class="hash hash-long" onclick="navigateTo('tx','${escAttr(tx.hash)}')">${shortHash(tx.hash,8)}</span></td>
+            <td><span class="hash" onclick="navigateTo('address','${escAttr(tx.from)}')">${shortHash(tx.from,8)}</span></td>
+            <td><span class="hash" onclick="navigateTo('address','${tx.to?escAttr(tx.to):''}')">${tx.to?shortHash(tx.to,8):'Contract'}</span></td>
+            <td><span class="value-exe">${weiToExe(tx.value)}</span></td>
+            <td class="value-sm">${formatNumber(hexDec(tx.gas))}</td>
+            <td>${txStatusBadge(receipt)}</td>
+          </tr>`;
+        }
+        ttx.innerHTML=th;
+      } else { ttx.innerHTML='<tr><td colspan="6"><div class="empty">No transactions</div></td></tr>'; }
+    }
+
+    async function loadTransaction(txHash) {
+      const detail=document.getElementById('txDetail');
+      detail.innerHTML='<div class="loading"><div class="spinner"></div>Loading transaction...</div>';
+      const [txRes,receiptRes]=await Promise.all([rpcCall('eth_getTransactionByHash',[txHash]),rpcCall('eth_getTransactionReceipt',[txHash])]);
+      const tx=txRes.result;
+      const receipt=receiptRes.result;
+      if(!tx&&!receipt){detail.innerHTML='<div class="empty"><div class="empty-icon">&#x26A0;</div>Transaction not found</div>';return;}
+      let block=null;
+      if(tx&&tx.blockNumber){const br=await rpcCall('eth_getBlockByNumber',[tx.blockNumber,false]);block=br.result;}
+      const ok=receipt?hexDec(receipt.status)===1:null;
+      const ts=block?timeAgo(hexDec(block.timestamp)*1000):'--';
+      const tsF=block?new Date(hexDec(block.timestamp)*1000).toLocaleString():'--';
+      detail.innerHTML=`
+        <div class="detail-label">Transaction Details</div>
+        <div class="detail-hash">${escAttr(txHash)}<span class="hash" style="font-size:12px;margin-left:8px;" onclick="copyText('${escAttr(txHash)}')">[Copy]</span></div>
+        <div class="detail-grid">
+          <div class="detail-field"><span class="detail-field-label">Status</span><span class="detail-field-value">${ok===true?'<span class="badge badge-success">Success</span>':ok===false?'<span class="badge badge-failed">Failed</span>':'<span class="badge" style="background:var(--bg-input);color:var(--text-muted);">Pending</span>'}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Block</span><span class="detail-field-value">${tx&&tx.blockNumber?'<a class="hash" onclick="navigateTo(\'block\',\''+hexDec(tx.blockNumber)+'\')">#'+hexDec(tx.blockNumber)+'</a>':'Pending'}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Timestamp</span><span class="detail-field-value">${tsF} (${ts})</span></div>
+          <div class="detail-field"><span class="detail-field-label">From</span><span class="detail-field-value"><a class="hash" onclick="navigateTo('address','${tx?escAttr(tx.from):''}')">${tx?shortHash(tx.from):'--'}</a></span></div>
+          <div class="detail-field"><span class="detail-field-label">To</span><span class="detail-field-value"><a class="hash" onclick="navigateTo('address','${tx&&tx.to?escAttr(tx.to):''}')">${tx&&tx.to?shortHash(tx.to):'Contract Create'}</a></span></div>
+          <div class="detail-field"><span class="detail-field-label">Value</span><span class="detail-field-value"><span class="value-exe">${tx?weiToExe(tx.value):'0'}</span></span></div>
+          <div class="detail-field"><span class="detail-field-label">Gas Price</span><span class="detail-field-value">${tx?weiToGwei(tx.gasPrice):'--'} Gwei</span></div>
+          <div class="detail-field"><span class="detail-field-label">Gas Used</span><span class="detail-field-value">${receipt?formatNumber(hexDec(receipt.gasUsed)):'--'}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Gas Limit</span><span class="detail-field-value">${tx?formatNumber(hexDec(tx.gas)):'--'}</span></div>
+          <div class="detail-field"><span class="detail-field-label">Nonce</span><span class="detail-field-value">${tx?hexDec(tx.nonce):'--'}</span></div>
+        </div>`;
+      document.getElementById('txLogs').innerHTML='<div style="padding:16px;color:var(--text-muted);font-size:14px;">No event logs for this transaction</div>';
+    }
+
+    async function loadAddress(addr) {
+      const detail=document.getElementById('addressDetail');
+      detail.innerHTML='<div class="loading"><div class="spinner"></div>Loading address...</div>';
+      const [balRes,txCountRes]=await Promise.all([rpcCall('eth_getBalance',[addr,'latest']),rpcCall('eth_getTransactionCount',[addr,'latest'])]);
+      const bal=hexDec(balRes.result);
+      const txCount=hexDec(txCountRes.result);
+      detail.innerHTML=`
+        <div class="detail-label">Address</div>
+        <div class="detail-hash">${escAttr(addr)}<span class="hash" style="font-size:12px;margin-left:8px;" onclick="copyText('${escAttr(addr)}')">[Copy]</span></div>
+        <div class="detail-grid">
+          <div class="detail-field"><span class="detail-field-label">Balance</span><span class="detail-field-value"><span class="value-exe">${weiToExe(balRes.result)}</span></span></div>
+          <div class="detail-field"><span class="detail-field-label">Transactions</span><span class="detail-field-value">${txCount}</span></div>
+        </div>`;
+      // Load recent txs from latest blocks
+      const blockRes=await rpcCall('eth_blockNumber');
+      const latestN=hexDec(blockRes.result);
+      const addrTxTable=document.getElementById('addressTxTable');
+      let html='';
+      let found=0;
+      for(let i=0;i<20&&found<20;i++){
+        const br=await rpcCall('eth_getBlockByNumber',['0x'+(latestN-i).toString(16),true]);
+        const b=br.result; if(!b||!b.transactions)continue;
+        for(const tx of b.transactions){
+          if(found>=20)break;
+          const isFrom=tx.from&&tx.from.toLowerCase()===addr.toLowerCase();
+          const isTo=tx.to&&tx.to.toLowerCase()===addr.toLowerCase();
+          if(!isFrom&&!isTo)continue;
+          const receipt=await rpcCall('eth_getTransactionReceipt',[tx.hash]);
+          html+=`<tr>
+            <td><span class="hash hash-long" onclick="navigateTo('tx','${escAttr(tx.hash)}')">${shortHash(tx.hash,8)}</span></td>
+            <td><a class="hash" onclick="navigateTo('block','${hexDec(tx.blockNumber)}')">${hexDec(tx.blockNumber)}</a></td>
+            <td class="value-sm">${timeAgo(hexDec(b.timestamp)*1000)}</td>
+            <td><span class="badge ${isFrom?'badge-failed':'badge-success'}">${isFrom?'OUT':'IN'}</span></td>
+            <td><span class="value-exe">${weiToExe(tx.value)}</span></td>
+            <td>${txStatusBadge(receipt)}</td>
+          </tr>`;
+          found++;
+        }
+      }
+      addrTxTable.innerHTML=html||'<tr><td colspan="6"><div class="empty">No transactions found for this address</div></td></tr>';
+    }
+
+    // === SEND TRANSACTION ===
+    function openSendModal() { document.getElementById('sendModal').classList.add('show'); document.getElementById('txResult').classList.remove('show'); }
+    function closeSendModal() { document.getElementById('sendModal').classList.remove('show'); }
+
+    async function sendTransaction() {
+      const from=document.getElementById('sendFrom').value.trim();
+      const to=document.getElementById('sendTo').value.trim();
+      const value=document.getElementById('sendValue').value.trim();
+      if(!to){showToast('Please enter recipient address');return;}
+      if(!/^0x[a-fA-F0-9]{40}$/.test(to)){showToast('Invalid recipient address');return;}
+      if(!value||parseFloat(value)<=0){showToast('Please enter a valid amount');return;}
+
+      const btn=document.getElementById('sendBtn');
+      btn.disabled=true; btn.textContent='Sending...';
+
+      try {
+        const valueWei='0x'+BigInt(Math.floor(parseFloat(value)*1e18)).toString(16);
+        const gasPriceGwei=parseFloat(document.getElementById('sendGasPrice').value)||1;
+        const gasPriceWei='0x'+BigInt(Math.floor(gasPriceGwei*1e9)).toString(16);
+
+        // Use eth_sendTransaction with proper params
+        const txParams = {
+          from: from || '0x0000000000000000000000000000000000000001',
+          to: to,
+          value: valueWei,
+          gas: '0x5208',
+          gasPrice: gasPriceWei
+        };
+
+        const res = await rpcCall('eth_sendTransaction', [txParams]);
+        btn.disabled=false; btn.textContent='Send Transaction';
+
+        if(res.error){
+          showToast('Error: '+(res.error.message||'Transaction failed'));
+          return;
+        }
+        const txHash=res.result;
+        if(!txHash || !txHash.startsWith('0x')){
+          showToast('Error: Invalid transaction hash returned');
+          return;
+        }
+
+        document.getElementById('txResultHash').textContent=txHash;
+        document.getElementById('txResultHash').onclick=function(){copyText(txHash);};
+        document.getElementById('txResultLink').onclick=function(){closeSendModal();navigateTo('tx',txHash);};
+        document.getElementById('txResult').classList.add('show');
+        showToast('Transaction sent!');
+      } catch(e) {
+        btn.disabled=false;
+        btn.textContent='Send Transaction';
+        showToast('Error: '+e.message);
+      }
+    }
+
+    // === INIT ===
+    // Parse URL hash on load (for direct links / bookmark)
+    if (window.location.hash) {
+      parseHashRoute();
+    } else {
+      loadHome();
+    }
+
+    // Auto refresh
+    setInterval(async()=>{
+      try{
+        const bn=await rpcCall('eth_blockNumber');
+        document.getElementById('statusBlock').textContent=formatNumber(hexDec(bn.result));
+        const gp=await rpcCall('eth_gasPrice');
+        document.getElementById('statusGas').textContent=weiToGwei(gp.result)+' Gwei';
+        document.getElementById('statusDot').classList.remove('offline');
+      }catch(e){document.getElementById('statusDot').classList.add('offline');}
+    },13000);
+  </script>
+</body>
+</html>

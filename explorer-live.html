@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exe Chain Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: #1a2234;
+      --bg-card-hover: #1f2a40;
+      --bg-input: #0f1623;
+      --border: #2a3548;
+      --border-light: #1e293b;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent: #22d3ee;
+      --accent-dim: rgba(34, 211, 238, 0.1);
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-orange: #f59e0b;
+      --accent-purple: #a78bfa;
+      --radius: 8px;
+      --radius-lg: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.3);
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* === NAVBAR === */
+    .navbar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10, 14, 23, 0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-light);
+      padding: 0 24px;
+      height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 12px;
+      text-decoration: none; color: var(--text-primary);
+    }
+    .nav-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 14px; color: #fff;
+      font-family: var(--font-mono);
+    }
+    .nav-title {
+      font-size: 18px; font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .nav-title span { color: var(--accent); }
+    .nav-links {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px; font-weight: 500;
+      padding: 8px 14px;
+      border-radius: var(--radius);
+      transition: all 0.2s;
+    }
+    .nav-links a:hover { color: var(--text-primary); background: var(--bg-card); }
+    .nav-links a.active { color: var(--accent); background: var(--accent-dim); }
+
+    /* === SEARCH BAR === */
+    .search-container {
+      max-width: 720px;
+      margin: 32px auto 0;
+      padding: 0 24px;
+      text-align: center;
+    }
+    .search-hero-title {
+      font-size: 28px; font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.03em;
+    }
+    .search-hero-sub {
+      color: var(--text-secondary);
+      font-size: 15px; margin-bottom: 20px;
+    }
+    .search-bar {
+      display: flex;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .search-bar:focus-within { border-color: var(--accent); }
+    .search-bar input {
+      flex: 1;
+      background: transparent;
+      border: none; outline: none;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      padding: 14px 20px;
+    }
+    .search-bar input::placeholder { color: var(--text-muted); }
+    .search-bar button {
+      background: var(--accent);
+      color: var(--bg-primary);
+      border: none;
+      padding: 14px 28px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: opacity 0.2s;
+    }
+    .search-bar button:hover { opacity: 0.85; }
+    .search-hint {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* === STATUS BAR === */
+    .status-bar {
+      display: flex; gap: 24px; justify-content: center;
+      margin: 24px auto 0; padding: 0 24px;
+      flex-wrap: wrap;
+    }
+    .status-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--text-secondary);
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      animation: pulse-dot 2s infinite;
+    }
+    .status-dot.offline { background: var(--accent-red); animation: none; }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .status-value { color: var(--text-primary); font-weight: 600; font-family: var(--font-mono); }
+
+    /* === MAIN CONTENT === */
+    .main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px; }
+
+    /* === SECTION HEADER === */
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 18px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title::before {
+      content: '';
+      width: 4px; height: 20px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    /* === CARD === */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-light);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-body { padding: 0; }
+
+    /* === TABLE === */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left;
+      padding: 12px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-light);
+      white-space: nowrap;
+    }
+    td {
+      padding: 12px 16px;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border-light);
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg-card-hover); }
+
+    /* === HASH === */
+    .hash {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--accent);
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .hash:hover { color: #67e8f9; text-decoration: underline; }
+    .hash-long { max-width: 180px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+
+    /* === ADDRESS === */
+    .address {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+    .address:hover { color: var(--accent); }
+    .address-copy {
+      display: inline-flex; align-items: center; gap: 4px;
+      cursor: pointer; color: var(--text-muted);
+      font-size: 12px; margin-left: 6px;
+      transition: color 0.2s;
+    }
+    .address-copy:hover { color: var(--accent); }
+
+    /* === BADGES === */
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-success { background: rgba(16,185,129,0.12); color: var(--accent-green); }
+    .badge-failed { background: rgba(239,68,68,0.12); color: var(--accent-red); }
+    .badge-contract { background: rgba(167,139,250,0.12); color: var(--accent-purple); }
+
+    /* === DETAIL PAGE === */
+    .detail-header {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .detail-label {
+      font-size: 12px; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.05em;
+      font-weight: 600; margin-bottom: 6px;
+    }
+    .detail-hash {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      word-break: break-all;
+      line-height: 1.8;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 0;
+      margin-top: 20px;
+      border-top: 1px solid var(--border-light);
+    }
+    .detail-field {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-light);
+      font-size: 14px;
+    }
+    .detail-field-label { color: var(--text-secondary); }
+    .detail-field-value { font-weight: 500; font-family: var(--font-mono); font-size: 13px; text-align: right; max-width: 60%; word-break: break-all; }
+
+    /* === TABS === */
+    .tabs {
+      display: flex; gap: 0;
+      border-bottom: 1px solid var(--border-light);
+      margin-bottom: 0;
+    }
+    .tab {
+      padding: 12px 20px;
+      font-size: 14px; font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      background: none; border-top: none; border-left: none; border-right: none;
+      font-family: var(--font-sans);
+    }
+    .tab:hover { color: var(--text-primary); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* === PAGINATION === */
+    .pagination {
+      display: flex; justify-content: center; align-items: center; gap: 4px;
+      padding: 16px;
+    }
+    .page-btn {
+      padding: 8px 14px;
+      font-size: 13px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all 0.2s;
+    }
+    .page-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+    .page-btn.active { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); font-weight: 600; }
+    .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* === LOADING === */
+    .loading {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 60px 20px; color: var(--text-muted);
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* === EMPTY STATE === */
+    .empty {
+      text-align: center; padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+
+    /* === FOOTER === */
+    .footer {
+      text-align: center;
+      padding: 32px 24px;
+      border-top: 1px solid var(--border-light);
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* === RESPONSIVE === */
+    @media (max-width: 768px) {
+      .navbar { padding: 0 16px; height: 56px; }
+      .nav-title { font-size: 15px; }
+      .nav-links a { padding: 6px 10px; font-size: 13px; }
+      .search-hero-title { font-size: 22px; }
+      .search-bar input { padding: 12px 16px; font-size: 13px; }
+      .search-bar button { padding: 12px 20px; }
+      .main { padding: 24px 16px 48px; }
+      .status-bar { gap: 16px; }
+      .detail-grid { grid-template-columns: 1fr; }
+      th, td { padding: 10px 12px; }
+      .hash-long { max-width: 120px; }
+    }
+
+    @media (max-width: 480px) {
+      .nav-links { display: none; }
+      .search-hero-sub { display: none; }
+    }
+
+    /* === TOAST === */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--bg-card);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 12px 24px;
+      font-size: 14px;
+      color: var(--accent);
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+
+    /* === GAS BAR === */
+    .gas-bar {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .gas-indicator {
+      width: 60px; height: 6px;
+      background: var(--bg-input);
+      border-radius: 3px; overflow: hidden;
+    }
+    .gas-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s;
+    }
+    .gas-low { background: var(--accent-green); }
+    .gas-medium { background: var(--accent-orange); }
+    .gas-high { background: var(--accent-red); }
+
+    /* === VALUE === */
+    .value-exe {
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-weight: 500;
+    }
+    .value-exe::after {
+      content: ' EXE';
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-left: 4px;
+    }
+    .value-sm {
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
+
+    /* === BLOCK ICON === */
+    .block-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px;
+      background: var(--accent-dim);
+      border-radius: var(--radius);
+      color: var(--accent);
+      font-weight: 700; font-size: 14px;
+      margin-right: 8px;
+    }
+
+    /* === TX ICON === */
+    .tx-type-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      font-size: 14px;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+    .tx-in { background: rgba(16,185,129,0.12); color: var(--accent-green); }
+    .tx-out { background: rgba(239,68,68,0.12); color: var(--accent-red); }
+    .tx-self { background: rgba(245,158,11,0.12); color: var(--accent-orange); }
+    .tx-contract { background: rgba(167,139,250,0.12); color: var(--accent-purple); }
+
+    .arrow-right {
+      display: inline-flex; align-items: center;
+      color: var(--text-muted); margin: 0 8px; font-size: 16px;
+    }
+
+    /* === MINI CHART === */
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .mini-stat {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+    }
+    .mini-stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .mini-stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+    }
+    .mini-stat-sub {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    @media (max-width: 768px) {
+      .mini-stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .mini-stat { padding: 16px; }
+      .mini-stat-value { font-size: 18px; }
+    }
+
+    /* === VIEW CONTAINERS === */
+    #view-home, #view-block, #view-tx, #view-address { display: none; }
+    #view-home.active, #view-block.active, #view-tx.active, #view-address.active { display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <a href="#" class="nav-brand" onclick="navigate('home'); return false;">
+      <div class="nav-logo">EX</div>
+      <div class="nav-title">Exe<span>Chain</span></div>
+    </a>
+    <div class="nav-links">
+      <a href="#" class="active" onclick="navigate('home'); return false;">Home</a>
+      <a href="#" onclick="navigate('home'); return false;">Blocks</a>
+      <a href="#" onclick="navigate('home'); return false;">Transactions</a>
+    </div>
+  </nav>
+
+  <!-- SEARCH -->
+  <div class="search-container">
+    <div class="search-hero-title">Exe Chain Explorer</div>
+    <div class="search-hero-sub">Search blocks, transactions, addresses on Exe Chain</div>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Search by Block / Tx Hash / Address" onkeydown="if(event.key==='Enter') doSearch()">
+      <button onclick="doSearch()">Search</button>
+    </div>
+    <div class="search-hint">Block number, transaction hash (0x...), or wallet address (0x...)</div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="status-bar" id="statusBar">
+    <div class="status-item">
+      <div class="status-dot" id="statusDot"></div>
+      <span>Network:</span>
+      <span class="status-value">Exe Chain</span>
+    </div>
+    <div class="status-item">
+      <span>Block:</span>
+      <span class="status-value" id="statusBlock">--</span>
+    </div>
+    <div class="status-item">
+      <span>Gas:</span>
+      <span class="status-value" id="statusGas">--</span>
+      <span>Gwei</span>
+    </div>
+    <div class="status-item">
+      <span>Chain ID:</span>
+      <span class="status-value">8848</span>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- HOME VIEW -->
+    <div id="view-home" class="active">
+      <div class="mini-stats" id="miniStats">
+        <div class="mini-stat">
+          <div class="mini-stat-label">Latest Block</div>
+          <div class="mini-stat-value" id="statBlock">--</div>
+          <div class="mini-stat-sub">~13s block time</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-stat-label">Gas Price</div>
+          <div class="mini-stat-value" id="statGas">--</div>
+          <div class="mini-stat-sub">Gwei</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-stat-label">Total Blocks</div>
+          <div class="mini-stat-value" id="statTotalBlocks">--</div>
+          <div class="mini-stat-sub">since genesis</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-stat-label">Status</div>
+          <div class="mini-stat-value" style="font-size:16px; color: var(--accent-green);" id="statStatus">Connecting...</div>
+          <div class="mini-stat-sub">Clique PoA</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-header">
+          <div class="section-title">Latest Blocks</div>
+          <span style="font-size: 13px; color: var(--text-muted);">Showing recent 10 blocks</span>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Block</th>
+                  <th>Age</th>
+                  <th>Txns</th>
+                  <th>Miner</th>
+                  <th>Gas Used</th>
+                  <th>Gas Limit</th>
+                </tr>
+              </thead>
+              <tbody id="blocksTable">
+                <tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading blocks...</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="section-title">Latest Transactions</div>
+          <span style="font-size: 13px; color: var(--text-muted);">Showing recent transactions</span>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tx Hash</th>
+                  <th>Block</th>
+                  <th>Age</th>
+                  <th>From / To</th>
+                  <th>Value</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="txTable">
+                <tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading transactions...</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BLOCK VIEW -->
+    <div id="view-block">
+      <div class="detail-header" id="blockDetail"></div>
+      <div class="card">
+        <div class="card-header">
+          <div class="section-title">Transactions</div>
+          <span id="blockTxCount" style="font-size: 13px; color: var(--text-muted);"></span>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tx Hash</th>
+                  <th>From</th>
+                  <th>To</th>
+                  <th>Value</th>
+                  <th>Gas Used</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="blockTxTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TX VIEW -->
+    <div id="view-tx">
+      <div class="detail-header" id="txDetail"></div>
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div class="section-title">Logs</div>
+        </div>
+        <div class="card-body">
+          <div id="txLogs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADDRESS VIEW -->
+    <div id="view-address">
+      <div class="detail-header" id="addressDetail"></div>
+      <div class="card">
+        <div class="card-header">
+          <div class="tabs">
+            <button class="tab active" onclick="switchAddressTab('tx')">Transactions</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tx Hash</th>
+                  <th>Block</th>
+                  <th>Age</th>
+                  <th>Direction</th>
+                  <th>Value</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="addressTxTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    Exe Chain Explorer &mdash; Chain ID 8848 &mdash; Clique PoA Consensus &mdash; Powered by <a href="https://www.cloudflare.com/" target="_blank">Cloudflare</a>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const RPC_ENDPOINTS = [
+      'https://rpc.exepc.top',
+    ];
+
+    // === UTILITIES ===
+    function shortHash(hash, chars = 10) {
+      if (!hash) return '--';
+      return hash.slice(0, chars) + '...' + hash.slice(-6);
+    }
+
+    function timeAgo(timestamp) {
+      if (!timestamp) return '--';
+      const diff = Math.floor(Date.now() / 1000) - Math.floor(timestamp / 1000);
+      if (diff < 5) return 'just now';
+      if (diff < 60) return diff + 's ago';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    function formatNumber(n) {
+      if (n === null || n === undefined) return '--';
+      return n.toLocaleString();
+    }
+
+    function gasPercent(used, limit) {
+      if (!used || !limit) return 0;
+      return Math.round((used / limit) * 100);
+    }
+
+    function gasClass(percent) {
+      if (percent < 30) return 'gas-low';
+      if (percent < 70) return 'gas-medium';
+      return 'gas-high';
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    function copyText(text) {
+      navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!'));
+    }
+
+    // === NAVIGATION ===
+    function navigate(view, param) {
+      document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + view).classList.add('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      if (view === 'block' && param) loadBlock(param);
+      else if (view === 'tx' && param) loadTransaction(param);
+      else if (view === 'address' && param) loadAddress(param);
+      else if (view === 'home') loadHome();
+    }
+
+    // === SEARCH ===
+    function doSearch() {
+      const q = document.getElementById('searchInput').value.trim();
+      if (!q) return;
+
+      // Block number
+      if (/^\d+$/.test(q)) {
+        navigate('block', q);
+        return;
+      }
+
+      // Tx hash (full)
+      if (/^0x[a-fA-F0-9]{64}$/.test(q)) {
+        navigate('tx', q);
+        return;
+      }
+
+      // Address
+      if (/^0x[a-fA-F0-9]{40}$/.test(q)) {
+        navigate('address', q);
+        return;
+      }
+
+      showToast('Invalid input: enter a block number, tx hash, or address');
+    }
+
+    // === API CALL ===
+    async function api(path) {
+      try {
+        const res = await fetch(API_BASE + path);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return await res.json();
+      } catch (e) {
+        // Fallback: try direct RPC
+        return null;
+      }
+    }
+
+    async function rpcCall(method, params = []) {
+      const payload = JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() });
+      // Try local API proxy first, then direct RPC
+      for (const endpoint of RPC_ENDPOINTS) {
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+          });
+          const data = await res.json();
+          if (data.result !== undefined || data.error) return data;
+        } catch (e) { continue; }
+      }
+      return { error: { message: 'All RPC endpoints unavailable' } };
+    }
+
+    function hexDec(hex) {
+      if (!hex) return 0;
+      return parseInt(hex, 16);
+    }
+
+    function weiToExe(wei) {
+      if (!wei) return '0';
+      const val = BigInt(wei);
+      const divisor = BigInt(10 ** 18);
+      const integer = val / divisor;
+      const fraction = val % divisor;
+      const fracStr = fraction.toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
+      return fracStr ? `${integer}.${fracStr}` : integer.toString();
+    }
+
+    function weiToGwei(wei) {
+      if (!wei) return '0';
+      return (Number(wei) / 1e9).toFixed(2);
+    }
+
+    // === LOAD HOME ===
+    async function loadHome() {
+      try {
+        const blockNum = await rpcCall('eth_blockNumber');
+        const gasPrice = await rpcCall('eth_gasPrice');
+        const latestNum = hexDec(blockNum.result);
+
+        document.getElementById('statBlock').textContent = formatNumber(latestNum);
+        document.getElementById('statGas').textContent = weiToGwei(gasPrice.result);
+        document.getElementById('statTotalBlocks').textContent = formatNumber(latestNum);
+        document.getElementById('statStatus').textContent = 'Synced';
+        document.getElementById('statStatus').style.color = 'var(--accent-green)';
+        document.getElementById('statusBlock').textContent = formatNumber(latestNum);
+        document.getElementById('statusGas').textContent = weiToGwei(gasPrice.result);
+        document.getElementById('statusDot').classList.remove('offline');
+
+        // Load blocks
+        loadBlocks(latestNum);
+        // Load transactions
+        loadLatestTransactions(latestNum);
+      } catch (e) {
+        document.getElementById('statStatus').textContent = 'Offline';
+        document.getElementById('statStatus').style.color = 'var(--accent-red)';
+        document.getElementById('statusDot').classList.add('offline');
+        document.getElementById('blocksTable').innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#x26A0;</div>Unable to connect to RPC endpoint</div></td></tr>';
+        document.getElementById('txTable').innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#x26A0;</div>Unable to connect to RPC endpoint</div></td></tr>';
+      }
+    }
+
+    async function loadBlocks(latestNum) {
+      const tbody = document.getElementById('blocksTable');
+      const promises = [];
+
+      for (let i = 0; i < 10; i++) {
+        const num = '0x' + (latestNum - i).toString(16);
+        promises.push(rpcCall('eth_getBlockByNumber', [num, false]));
+      }
+
+      const results = await Promise.all(promises);
+      let html = '';
+
+      for (const r of results) {
+        const b = r.result;
+        if (!b) continue;
+        const gasPct = gasPercent(hexDec(b.gasUsed), hexDec(b.gasLimit));
+        const gasC = gasClass(gasPct);
+        html += `<tr>
+          <td>
+            <span class="block-icon">#${hexDec(b.number)}</span>
+            <a class="hash" onclick="navigate('block','${hexDec(b.number)}')">${hexDec(b.number)}</a>
+          </td>
+          <td class="value-sm">${timeAgo(hexDec(b.timestamp) * 1000)}</td>
+          <td><span class="value-exe">${Array.isArray(b.transactions) ? b.transactions.length : 0}</span></td>
+          <td><span class="hash hash-long" onclick="navigate('address','${b.miner}')">${shortHash(b.miner)}</span></td>
+          <td>
+            <div class="gas-bar">
+              <div class="gas-indicator"><div class="gas-fill ${gasC}" style="width:${gasPct}%"></div></div>
+              <span class="value-sm">${formatNumber(hexDec(b.gasUsed))}</span>
+            </div>
+          </td>
+          <td class="value-sm">${formatNumber(hexDec(b.gasLimit))}</td>
+        </tr>`;
+      }
+
+      tbody.innerHTML = html || '<tr><td colspan="6"><div class="empty">No blocks found</div></td></tr>';
+    }
+
+    async function loadLatestTransactions(latestNum) {
+      const tbody = document.getElementById('txTable');
+      const txs = [];
+
+      for (let i = 0; i < 5 && txs.length < 15; i++) {
+        const num = '0x' + (latestNum - i).toString(16);
+        const blockRes = await rpcCall('eth_getBlockByNumber', [num, true]);
+        const block = blockRes.result;
+        if (!block || !block.transactions) continue;
+
+        for (const tx of block.transactions) {
+          if (txs.length >= 15) break;
+          txs.push({ tx, blockTimestamp: hexDec(block.timestamp) * 1000 });
+        }
+      }
+
+      // Get receipts for status
+      let html = '';
+      for (const item of txs) {
+        const tx = item.tx;
+        let status = null;
+        try {
+          const receipt = await rpcCall('eth_getTransactionReceipt', [tx.hash]);
+          if (receipt.result) status = hexDec(receipt.result.status) === 1;
+        } catch(e) {}
+
+        const txType = !tx.to ? 'contract' : 'default';
+        const iconClass = txType === 'contract' ? 'tx-contract' : 'tx-out';
+
+        html += `<tr>
+          <td><span class="hash hash-long" onclick="navigate('tx','${tx.hash}')">${shortHash(tx.hash, 8)}</span></td>
+          <td><a class="hash" onclick="navigate('block','${hexDec(tx.blockNumber)}')">${hexDec(tx.blockNumber)}</a></td>
+          <td class="value-sm">${timeAgo(item.blockTimestamp)}</td>
+          <td>
+            <span class="tx-type-icon ${iconClass}">${txType === 'contract' ? '+' : '\u2192'}</span>
+            <span class="hash" style="font-size:12px;" onclick="navigate('address','${tx.from}')">${shortHash(tx.from, 6)}</span>
+            <span class="arrow-right">\u2192</span>
+            <span class="hash" style="font-size:12px;" onclick="navigate('address','${tx.to || ''}')">${tx.to ? shortHash(tx.to, 6) : 'Contract Create'}</span>
+          </td>
+          <td><span class="value-exe">${weiToExe(tx.value)}</span></td>
+          <td>${status === true ? '<span class="badge badge-success">Success</span>' : status === false ? '<span class="badge badge-failed">Failed</span>' : '<span class="badge" style="background:var(--bg-input);color:var(--text-muted);">Pending</span>'}</td>
+        </tr>`;
+      }
+
+      tbody.innerHTML = html || '<tr><td colspan="6"><div class="empty">No transactions found</div></td></tr>';
+    }
+
+    // === LOAD BLOCK DETAIL ===
+    async function loadBlock(blockId) {
+      const detail = document.getElementById('blockDetail');
+      detail.innerHTML = '<div class="loading"><div class="spinner"></div>Loading block...</div>';
+
+      const param = blockId.startsWith('0x') ? blockId : '0x' + parseInt(blockId).toString(16);
+      const res = await rpcCall('eth_getBlockByNumber', [param, false]);
+      const block = res.result;
+
+      if (!block) {
+        detail.innerHTML = '<div class="empty"><div class="empty-icon">&#x26A0;</div>Block not found</div>';
+        return;
+      }
+
+      const gasPct = gasPercent(hexDec(block.gasUsed), hexDec(block.gasLimit));
+      const gasC = gasClass(gasPct);
+      const ts = new Date(hexDec(block.timestamp) * 1000);
+      const txCount = Array.isArray(block.transactions) ? block.transactions.length : 0;
+
+      detail.innerHTML = `
+        <div class="detail-label">Block #${hexDec(block.number)}</div>
+        <div class="section-header" style="margin-bottom:0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="block-icon" style="width:40px;height:40px;font-size:16px;">#</span>
+            <span style="font-size:20px;font-weight:700;">${hexDec(block.number)}</span>
+          </div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-field">
+            <span class="detail-field-label">Timestamp</span>
+            <span class="detail-field-value">${ts.toLocaleString()} (${timeAgo(hexDec(block.timestamp) * 1000)})</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Transactions</span>
+            <span class="detail-field-value">${txCount} transactions</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Miner</span>
+            <span class="detail-field-value"><a class="hash" onclick="navigate('address','${block.miner}')">${shortHash(block.miner)}</a></span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Gas Used</span>
+            <span class="detail-field-value">
+              ${formatNumber(hexDec(block.gasUsed))} / ${formatNumber(hexDec(block.gasLimit))}
+              <div class="gas-bar" style="margin-top:4px;">
+                <div class="gas-indicator"><div class="gas-fill ${gasC}" style="width:${gasPct}%"></div></div>
+                <span style="font-size:11px;color:var(--text-muted);">${gasPct}%</span>
+              </div>
+            </span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Hash</span>
+            <span class="detail-field-value" style="max-width:70%;">${block.hash}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Parent Hash</span>
+            <span class="detail-field-value" style="max-width:70%;"><a class="hash" onclick="navigate('block','${hexDec(block.number)-1}')">${shortHash(block.parentHash, 12)}</a></span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Size</span>
+            <span class="detail-field-value">${formatNumber(hexDec(block.size))} bytes</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Difficulty</span>
+            <span class="detail-field-value">${hexDec(block.difficulty || '0x0')}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Nonce</span>
+            <span class="detail-field-value">${block.nonce}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Extra Data</span>
+            <span class="detail-field-value" style="max-width:60%;">${block.extraData}</span>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('blockTxCount').textContent = txCount + ' transactions in this block';
+
+      // Load transactions
+      const blockRes2 = await rpcCall('eth_getBlockByNumber', [param, true]);
+      const blockFull = blockRes2.result;
+      const txTbody = document.getElementById('blockTxTable');
+
+      if (blockFull && blockFull.transactions) {
+        let txHtml = '';
+        for (const tx of blockFull.transactions) {
+          let status = null;
+          try {
+            const receipt = await rpcCall('eth_getTransactionReceipt', [tx.hash]);
+            if (receipt.result) status = hexDec(receipt.result.status) === 1;
+          } catch(e) {}
+
+          const txType = !tx.to ? 'contract' : 'default';
+          const iconClass = txType === 'contract' ? 'tx-contract' : 'tx-out';
+
+          txHtml += `<tr>
+            <td><span class="hash hash-long" onclick="navigate('tx','${tx.hash}')">${shortHash(tx.hash, 8)}</span></td>
+            <td><span class="hash" onclick="navigate('address','${tx.from}')">${shortHash(tx.from, 8)}</span></td>
+            <td><span class="hash" onclick="navigate('address','${tx.to || ''}')">${tx.to ? shortHash(tx.to, 8) : 'Contract Create'}</span></td>
+            <td><span class="value-exe">${weiToExe(tx.value)}</span></td>
+            <td class="value-sm">${formatNumber(hexDec(tx.gas))}</td>
+            <td>${status === true ? '<span class="badge badge-success">Success</span>' : status === false ? '<span class="badge badge-failed">Failed</span>' : '<span class="badge" style="background:var(--bg-input);color:var(--text-muted);">Pending</span>'}</td>
+          </tr>`;
+        }
+        txTbody.innerHTML = txHtml;
+      } else {
+        txTbody.innerHTML = '<tr><td colspan="6"><div class="empty">No transactions in this block</div></td></tr>';
+      }
+    }
+
+    // === LOAD TRANSACTION ===
+    async function loadTransaction(txHash) {
+      const detail = document.getElementById('txDetail');
+      detail.innerHTML = '<div class="loading"><div class="spinner"></div>Loading transaction...</div>';
+
+      const [txRes, receiptRes] = await Promise.all([
+        rpcCall('eth_getTransactionByHash', [txHash]),
+        rpcCall('eth_getTransactionReceipt', [txHash]),
+      ]);
+
+      const tx = txRes.result;
+      const receipt = receiptRes.result;
+
+      if (!tx && !receipt) {
+        detail.innerHTML = '<div class="empty"><div class="empty-icon">&#x26A0;</div>Transaction not found</div>';
+        return;
+      }
+
+      let block = null;
+      if (tx && tx.blockNumber) {
+        const blockRes = await rpcCall('eth_getBlockByNumber', [tx.blockNumber, false]);
+        block = blockRes.result;
+      }
+
+      const status = receipt ? hexDec(receipt.status) === 1 : null;
+      const success = status;
+      const contractAddr = receipt && receipt.contractAddress ? receipt.contractAddress : null;
+      const ts = block ? timeAgo(hexDec(block.timestamp) * 1000) : '--';
+      const tsFull = block ? new Date(hexDec(block.timestamp) * 1000).toLocaleString() : '--';
+
+      detail.innerHTML = `
+        <div class="detail-label">Transaction Details</div>
+        <div class="detail-hash">
+          ${txHash}
+          <span class="address-copy" onclick="copyText('${txHash}')">&#x2398; Copy</span>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-field">
+            <span class="detail-field-label">Status</span>
+            <span class="detail-field-value">${success === true ? '<span class="badge badge-success">Success</span>' : success === false ? '<span class="badge badge-failed">Failed</span>' : '<span class="badge" style="background:var(--bg-input);color:var(--text-muted);">Pending</span>'}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Block</span>
+            <span class="detail-field-value"><a class="hash" onclick="navigate('block','${tx ? hexDec(tx.blockNumber) : (receipt ? hexDec(receipt.blockNumber) : '')}')">${tx ? hexDec(tx.blockNumber) : (receipt ? hexDec(receipt.blockNumber) : '--')}</a></span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Timestamp</span>
+            <span class="detail-field-value">${tsFull} (${ts})</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Transaction Index</span>
+            <span class="detail-field-value">${receipt ? hexDec(receipt.transactionIndex) : '--'}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">From</span>
+            <span class="detail-field-value"><a class="hash" onclick="navigate('address','${tx ? tx.from : '--'}')">${tx ? shortHash(tx.from) : '--'}</a></span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">To</span>
+            <span class="detail-field-value">${contractAddr ? '<span class="badge badge-contract">Contract</span> ' : ''}<a class="hash" onclick="navigate('address','${tx && tx.to ? tx.to : (contractAddr || '--')}')">${tx && tx.to ? shortHash(tx.to) : (contractAddr ? shortHash(contractAddr) : 'Contract Create')}</a></span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Value</span>
+            <span class="detail-field-value"><span class="value-exe">${tx ? weiToExe(tx.value) : '0'}</span></span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Gas Price</span>
+            <span class="detail-field-value">${tx && tx.gasPrice ? weiToGwei(tx.gasPrice) + ' Gwei' : '--'}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Gas Limit</span>
+            <span class="detail-field-value">${tx ? formatNumber(hexDec(tx.gas)) : '--'}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Gas Used</span>
+            <span class="detail-field-value">${receipt ? formatNumber(hexDec(receipt.gasUsed)) : '--'}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Nonce</span>
+            <span class="detail-field-value">${tx ? hexDec(tx.nonce) : '--'}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Type</span>
+            <span class="detail-field-value">${tx && tx.type ? hexDec(tx.type) : 0}</span>
+          </div>
+          ${tx && tx.maxFeePerGas ? `<div class="detail-field">
+            <span class="detail-field-label">Max Fee</span>
+            <span class="detail-field-value">${weiToGwei(tx.maxFeePerGas)} Gwei</span>
+          </div>` : ''}
+          ${tx && tx.maxPriorityFeePerGas ? `<div class="detail-field">
+            <span class="detail-field-label">Max Priority Fee</span>
+            <span class="detail-field-value">${weiToGwei(tx.maxPriorityFeePerGas)} Gwei</span>
+          </div>` : ''}
+          <div class="detail-field">
+            <span class="detail-field-label">Input Data</span>
+            <span class="detail-field-value" style="max-width:80%; font-size:11px;">${tx && tx.input && tx.input !== '0x' ? shortHash(tx.input, 20) + '<span class="address-copy" onclick="copyText(\'' + (tx.input) + '\')">&#x2398;</span>' : '0x'}</span>
+          </div>
+        </div>
+      `;
+
+      // Logs
+      const logsDiv = document.getElementById('txLogs');
+      if (receipt && receipt.logs && receipt.logs.length > 0) {
+        let logHtml = '';
+        receipt.logs.forEach((log, i) => {
+          logHtml += `<div style="padding:16px 20px;border-bottom:1px solid var(--border-light);font-family:var(--font-mono);font-size:12px;">
+            <div style="color:var(--text-muted);margin-bottom:8px;">Log #${i}</div>
+            <div style="margin-bottom:4px;"><span style="color:var(--text-muted);">Address:</span> <span class="hash" onclick="navigate('address','${log.address}')">${shortHash(log.address)}</span></div>
+            <div style="margin-bottom:4px;"><span style="color:var(--text-muted);">Topics:</span></div>
+            ${log.topics.map(t => `<div style="color:var(--text-secondary);padding-left:12px;margin-bottom:2px;word-break:break-all;">${t}</div>`).join('')}
+            ${log.data !== '0x' ? `<div style="margin-top:4px;"><span style="color:var(--text-muted);">Data:</span> <span style="color:var(--text-secondary);">${shortHash(log.data, 20)}</span></div>` : ''}
+          </div>`;
+        });
+        logsDiv.innerHTML = logHtml;
+      } else {
+        logsDiv.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);">No event logs for this transaction</div>';
+      }
+    }
+
+    // === LOAD ADDRESS ===
+    async function loadAddress(address) {
+      const detail = document.getElementById('addressDetail');
+      detail.innerHTML = '<div class="loading"><div class="spinner"></div>Loading address...</div>';
+
+      const [balanceRes, txCountRes, codeRes] = await Promise.all([
+        rpcCall('eth_getBalance', [address, 'latest']),
+        rpcCall('eth_getTransactionCount', [address, 'latest']),
+        rpcCall('eth_getCode', [address, 'latest']),
+      ]);
+
+      const balance = weiToExe(balanceRes.result);
+      const txCount = hexDec(txCountRes.result || '0x0');
+      const isContract = codeRes.result && codeRes.result !== '0x';
+
+      detail.innerHTML = `
+        <div class="detail-label">Address ${isContract ? '(Contract)' : ''}</div>
+        <div class="detail-hash">
+          ${address}
+          <span class="address-copy" onclick="copyText('${address}')">&#x2398; Copy</span>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-field">
+            <span class="detail-field-label">Balance</span>
+            <span class="detail-field-value"><span class="value-exe">${balance}</span></span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Transactions</span>
+            <span class="detail-field-value">${formatNumber(txCount)}</span>
+          </div>
+          <div class="detail-field">
+            <span class="detail-field-label">Type</span>
+            <span class="detail-field-value">${isContract ? '<span class="badge badge-contract">Smart Contract</span>' : '<span class="badge badge-success">EOA</span>'}</span>
+          </div>
+        </div>
+      `;
+
+      // Load transactions for address
+      loadAddressTransactions(address);
+    }
+
+    async function loadAddressTransactions(address) {
+      const tbody = document.getElementById('addressTxTable');
+      tbody.innerHTML = '<tr><td colspan="6"><div class="loading"><div class="spinner"></div>Scanning recent blocks...</div></td></tr>';
+
+      const addr = address.toLowerCase();
+      const latest = await rpcCall('eth_blockNumber');
+      const latestNum = hexDec(latest.result);
+      const txs = [];
+
+      for (let i = 0; i < 50 && txs.length < 30; i++) {
+        const num = '0x' + (latestNum - i).toString(16);
+        const blockRes = await rpcCall('eth_getBlockByNumber', [num, true]);
+        const block = blockRes.result;
+        if (!block || !block.transactions) continue;
+
+        for (const tx of block.transactions) {
+          if (txs.length >= 30) break;
+          const isFrom = tx.from && tx.from.toLowerCase() === addr;
+          const isTo = tx.to && tx.to.toLowerCase() === addr;
+          if (isFrom || isTo) {
+            let status = null;
+            try {
+              const receipt = await rpcCall('eth_getTransactionReceipt', [tx.hash]);
+              if (receipt.result) status = hexDec(receipt.result.status) === 1;
+            } catch(e) {}
+            txs.push({
+              tx,
+              direction: isFrom ? 'OUT' : 'IN',
+              counterparty: isFrom ? tx.to : tx.from,
+              timestamp: hexDec(block.timestamp) * 1000,
+              status,
+            });
+          }
+        }
+      }
+
+      let html = '';
+      for (const item of txs) {
+        const dirClass = item.direction === 'IN' ? 'tx-in' : 'tx-out';
+        html += `<tr>
+          <td><span class="hash hash-long" onclick="navigate('tx','${item.tx.hash}')">${shortHash(item.tx.hash, 8)}</span></td>
+          <td><a class="hash" onclick="navigate('block','${hexDec(item.tx.blockNumber)}')">${hexDec(item.tx.blockNumber)}</a></td>
+          <td class="value-sm">${timeAgo(item.timestamp)}</td>
+          <td>
+            <span class="tx-type-icon ${dirClass}">${item.direction === 'IN' ? '\u2193' : '\u2191'}</span>
+            <span class="badge ${item.direction === 'IN' ? 'badge-success' : 'badge-failed'}">${item.direction}</span>
+          </td>
+          <td><span class="value-exe">${weiToExe(item.tx.value)}</span></td>
+          <td>${item.status === true ? '<span class="badge badge-success">Success</span>' : item.status === false ? '<span class="badge badge-failed">Failed</span>' : '<span class="badge" style="background:var(--bg-input);color:var(--text-muted);">Pending</span>'}</td>
+        </tr>`;
+      }
+
+      tbody.innerHTML = html || '<tr><td colspan="6"><div class="empty">No transactions found for this address</div></td></tr>';
+    }
+
+    function switchAddressTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    // === INIT ===
+    loadHome();
+
+    // Auto-refresh status every 13 seconds
+    setInterval(async () => {
+      try {
+        const blockNum = await rpcCall('eth_blockNumber');
+        const gasPrice = await rpcCall('eth_gasPrice');
+        document.getElementById('statusBlock').textContent = formatNumber(hexDec(blockNum.result));
+        document.getElementById('statusGas').textContent = weiToGwei(gasPrice.result) + ' Gwei';
+        document.getElementById('statusDot').classList.remove('offline');
+      } catch(e) {
+        document.getElementById('statusDot').classList.add('offline');
+      }
+    }, 13000);
+  </script>
+</body>
+<!-- v2-rpc-fix -->
+</html>
