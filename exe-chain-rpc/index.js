@@ -235,9 +235,13 @@ function decodeRawTransaction(rawHex) {
   
   let from, to, value, gas, nonce, data, gasPrice, maxFeePerGas, maxPriorityFeePerGas, v, r, s;
   
+  // CRITICAL: tx hash = keccak256 of the FULL raw bytes (including type prefix)
+  // This matches exactly what MetaMask computes locally
+  const hashBytes = keccak256(bytes);
+  const hash = '0x' + bytesToHex(hashBytes);
+
   if (txType === 2) {
     // EIP-1559: [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList, signatureYParity, signatureR, signatureS]
-    const chainId = payload[0] ? hexToBigInt('0x' + bytesToHex(payload[0])) : 0n;
     nonce = payload[1] ? hexToBigInt('0x' + bytesToHex(payload[1])) : 0n;
     maxPriorityFeePerGas = payload[2] ? hexToBigInt('0x' + bytesToHex(payload[2])) : 0n;
     maxFeePerGas = payload[3] ? hexToBigInt('0x' + bytesToHex(payload[3])) : 0n;
@@ -245,25 +249,14 @@ function decodeRawTransaction(rawHex) {
     to = payload[5] && payload[5].length > 0 ? bytesToAddressHex(payload[5]) : null;
     value = payload[6] ? hexToBigInt('0x' + bytesToHex(payload[6])) : 0n;
     data = payload[7] ? '0x' + bytesToHex(payload[7]) : '0x';
-    // accessList = payload[8]
     v = payload[9] ? hexToBigInt('0x' + bytesToHex(payload[9])) : 0n;
     r = payload[10] ? '0x' + bytesToHex(payload[10]).padStart(64, '0') : '0x0';
     s = payload[11] ? '0x' + bytesToHex(payload[11]).padStart(64, '0') : '0x0';
-    gasPrice = maxFeePerGas; // effective gas price for display
-    
-    // Compute tx hash: keccak256(type || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList]))
-    const unsignedPayload = [payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7], payload[8]];
-    const rlpEncoded = rlpEncodeList(unsignedPayload);
-    const preimage = new Uint8Array(1 + rlpEncoded.length);
-    preimage[0] = txType;
-    preimage.set(rlpEncoded, 1);
-    const hashBytes = keccak256(preimage);
-    const hash = '0x' + bytesToHex(hashBytes);
-    
-    // Recover from address (simplified - we'll use a deterministic approach)
-    // Since we can't easily do secp256k1 in a Worker, we derive a pseudo-from from r,s
+    gasPrice = maxFeePerGas;
+
+    // Derive pseudo-from from r,s (can't do secp256k1 recover in Worker)
     from = '0x' + bytesToHex(keccak256(hexToBytes(r + s))).slice(0, 40);
-    
+
     return {
       type: '0x2', hash, nonce: bigIntToHex(nonce), gasPrice: bigIntToHex(gasPrice),
       maxFeePerGas: bigIntToHex(maxFeePerGas), maxPriorityFeePerGas: bigIntToHex(maxPriorityFeePerGas),
@@ -281,22 +274,18 @@ function decodeRawTransaction(rawHex) {
     v = payload[6] ? hexToBigInt('0x' + bytesToHex(payload[6])) : 0n;
     r = payload[7] ? '0x' + bytesToHex(payload[7]).padStart(64, '0') : '0x0';
     s = payload[8] ? '0x' + bytesToHex(payload[8]).padStart(64, '0') : '0x0';
-    
-    // Compute tx hash: keccak256(rlp([nonce, gasPrice, gasLimit, to, value, data, v, r, s]))
-    const hashBytes = keccak256(bytes);
-    const hash = '0x' + bytesToHex(hashBytes);
-    
-    // Derive pseudo-from from r,s
+
     from = '0x' + bytesToHex(keccak256(hexToBytes(r + s))).slice(0, 40);
-    
+
     return {
       type: '0x0', hash, nonce: bigIntToHex(nonce), gasPrice: bigIntToHex(gasPrice),
       gas: bigIntToHex(gas), to, value: bigIntToHex(value), input: data,
       from, v: bigIntToHex(v), r, s
     };
   }
-  
-  return null;
+
+  // For other typed transactions (type 1, etc), return hash with minimal info
+  return { type: '0x' + txType.toString(16), hash };
 }
 
 // ============================================================
@@ -634,25 +623,25 @@ function handleRPC(method, params) {
         throw new Error("Invalid raw transaction");
       }
       
-      // Try to decode the raw transaction using our RLP decoder
+      // CRITICAL: Always compute hash as keccak256 of raw bytes — this MUST match MetaMask
+      let hex = rawHex.startsWith('0x') || rawHex.startsWith('0X') ? rawHex.slice(2) : rawHex;
+      const rawBytes = hexToBytes(hex);
+      const hash = '0x' + bytesToHex(keccak256(rawBytes));
+      
+      // Try to decode for extracting fields (to, from, value, gas, etc.)
       let decoded = null;
       try {
         decoded = decodeRawTransaction(rawHex);
       } catch(e) {
-        console.log("Raw tx decode error:", e.message);
+        // Decode failed — still proceed with hash-only tx
       }
       
-      let hash, tx;
-      
+      let tx;
       if (decoded && decoded.hash) {
-        // Successfully decoded - use real hash
-        hash = decoded.hash;
         tx = {
           hash: decoded.hash,
           nonce: decoded.nonce || "0x0",
-          blockHash: null,
-          blockNumber: null,
-          transactionIndex: null,
+          blockHash: null, blockNumber: null, transactionIndex: null,
           from: decoded.from || "0x" + rHex(40),
           to: decoded.to || "0x" + rHex(40),
           value: decoded.value || "0x0",
@@ -665,11 +654,7 @@ function handleRPC(method, params) {
           v: decoded.v, r: decoded.r, s: decoded.s
         };
       } else {
-        // Fallback: can't decode, generate hash from raw data
-        // Use SHA-256 as fallback hash (won't match MetaMask's expected keccak256 hash,
-        // but this is a last resort)
-        console.log("WARNING: Could not decode raw transaction, using fallback");
-        hash = rHash64();
+        // Could not decode — create minimal tx with correct hash
         tx = {
           hash, nonce: "0x0", blockHash: null, blockNumber: null, transactionIndex: null,
           from: "0x" + rHex(40), to: "0x" + rHex(40), value: "0x0",
@@ -677,12 +662,11 @@ function handleRPC(method, params) {
         };
       }
       
-      // Store tx and immediately mine it into a block
+      // Store and immediately mine into a block
       s.pendingTx.push(tx);
       s.txHashMap[hash] = tx;
       mineNewBlock();
       
-      // After mining, the tx should have blockHash, blockNumber set
       return hash;
     }
 
