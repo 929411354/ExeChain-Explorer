@@ -27,7 +27,11 @@ import {
   Search, Copy, Check, ChevronDown, Fuel, Box, ArrowLeftRight, Clock,
   Home, Blocks, FileText, Activity, ArrowRight, ExternalLink, Menu, X,
   Cuboid, Hash, Wallet, Cpu, Zap, TrendingUp, CircleDot, AlertCircle,
+  ShieldCheck, FileCode2, Loader2, Code2,
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 
 // ============================================================================
 // CONSTANTS
@@ -625,6 +629,13 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
               <FileText className="w-4 h-4" />
               Transactions
             </button>
+            <button
+              onClick={() => onNavigate('#verify-contract')}
+              className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Verify Contract
+            </button>
           </nav>
 
           {/* Search Bar */}
@@ -688,6 +699,12 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
                 className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
               >
                 <FileText className="w-4 h-4" /> Transactions
+              </button>
+              <button
+                onClick={() => { onNavigate('#verify-contract'); setMobileMenuOpen(false); }}
+                className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" /> Verify Contract
               </button>
             </nav>
           </div>
@@ -1794,9 +1811,36 @@ function AddressDetailPage({ address }: { address: string }) {
   const { balance, txCount, loading, error } = useAddress(address);
   const [transactions, setTransactions] = useState<TxRow[]>([]);
   const [loadingTxs, setLoadingTxs] = useState(true);
-  const [tab, setTab] = useState('all');
+  const [tab, setTab] = useState('transactions');
+  const [txTab, setTxTab] = useState('all');
   const [page, setPage] = useState(1);
   const perPage = 50;
+  const [verifiedContract, setVerifiedContract] = useState<{
+    name: string; compiler: string; version: string; optimization: number;
+    sourceCode: string; abi: unknown; createdAt: string;
+  } | null>(null);
+  const [loadingContract, setLoadingContract] = useState(true);
+
+  // Fetch verified contract info
+  useEffect(() => {
+    if (!address) return;
+    let mounted = true;
+    setLoadingContract(true);
+    fetch(`/api/verify-contract?address=${address.toLowerCase()}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (mounted) {
+          if (data.success && data.contract?.isVerified) {
+            setVerifiedContract(data.contract);
+          }
+          setLoadingContract(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) setLoadingContract(false);
+      });
+    return () => { mounted = false; };
+  }, [address]);
 
   useEffect(() => {
     if (txCount === null) return;
@@ -1851,10 +1895,10 @@ function AddressDetailPage({ address }: { address: string }) {
   }, [address, txCount, page]);
 
   const filteredTxs = useMemo(() => {
-    if (tab === 'sent') return transactions.filter((tx) => tx.from.toLowerCase() === address.toLowerCase());
-    if (tab === 'received') return transactions.filter((tx) => tx.to?.toLowerCase() === address.toLowerCase());
+    if (txTab === 'sent') return transactions.filter((tx) => tx.from.toLowerCase() === address.toLowerCase());
+    if (txTab === 'received') return transactions.filter((tx) => tx.to?.toLowerCase() === address.toLowerCase());
     return transactions;
-  }, [transactions, tab, address]);
+  }, [transactions, txTab, address]);
 
   if (loading) {
     return (
@@ -1929,30 +1973,378 @@ function AddressDetailPage({ address }: { address: string }) {
         </CardContent>
       </Card>
 
-      {/* Transactions */}
+      {/* Tabs: Transactions / Contract */}
+      <Tabs value={tab} onValueChange={setTab}>
+        <Card className="border border-gray-200">
+          <CardHeader>
+            <TabsList>
+              <TabsTrigger value="transactions">
+                <FileText className="w-4 h-4 mr-1.5" />
+                Transactions
+              </TabsTrigger>
+              <TabsTrigger value="contract">
+                <FileCode2 className="w-4 h-4 mr-1.5" />
+                Contract
+              </TabsTrigger>
+            </TabsList>
+          </CardHeader>
+        </Card>
+
+        <TabsContent value="transactions">
+          <Card className="border border-gray-200">
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                  <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+                  Transactions
+                </CardTitle>
+                <Tabs value={txTab} onValueChange={setTxTab}>
+                  <TabsList>
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    <TabsTrigger value="sent">Sent</TabsTrigger>
+                    <TabsTrigger value="received">Received</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <TransactionsTable transactions={filteredTxs} loading={loadingTxs} />
+              </div>
+            </CardContent>
+          </Card>
+          <SimplePagination currentPage={page} totalPages={100} onPageChange={setPage} />
+        </TabsContent>
+
+        <TabsContent value="contract">
+          <Card className="border border-gray-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+                Contract
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingContract ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-4 w-64" />
+                  <Skeleton className="h-[200px] w-full" />
+                </div>
+              ) : verifiedContract ? (
+                <div className="space-y-5">
+                  {/* Contract Info */}
+                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-green-50/50 border-b border-gray-100">
+                      <ShieldCheck className="w-5 h-5 text-green-600" />
+                      <span className="text-sm font-semibold text-green-700">
+                        ✓ Contract Source Code Verified
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 py-3 bg-gray-50/60 border-b border-gray-100">
+                      <span className="text-xs text-gray-500 font-medium shrink-0 w-40">Contract Name</span>
+                      <span className="text-sm font-semibold font-mono">{verifiedContract.name}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 py-3 border-b border-gray-100">
+                      <span className="text-xs text-gray-500 font-medium shrink-0 w-40">Compiler</span>
+                      <span className="text-sm text-gray-700">{verifiedContract.compiler} {verifiedContract.version}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 py-3 border-b border-gray-100">
+                      <span className="text-xs text-gray-500 font-medium shrink-0 w-40">Optimization Enabled</span>
+                      <span className="text-sm text-gray-700">
+                        {verifiedContract.optimization > 0 ? `Yes (${verifiedContract.optimization} runs)` : 'No'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 py-3">
+                      <span className="text-xs text-gray-500 font-medium shrink-0 w-40">Verified On</span>
+                      <span className="text-sm text-gray-700">
+                        {verifiedContract.createdAt ? new Date(verifiedContract.createdAt).toLocaleString() : '--'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Source Code */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Code2 className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700">Contract Source Code</span>
+                      <CopyButton text={verifiedContract.sourceCode} />
+                    </div>
+                    <div className="border border-gray-200 rounded-lg overflow-hidden bg-[#f8f9fa]">
+                      <pre className="p-4 overflow-x-auto max-h-[600px] overflow-y-auto text-sm font-mono leading-relaxed">
+                        <code>{verifiedContract.sourceCode}</code>
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-10">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <ShieldCheck className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <p className="text-gray-500 mb-1 font-medium">Contract Source Code Not Verified</p>
+                  <p className="text-sm text-gray-400 mb-5">
+                    Are you the contract creator? Verify and publish your source code to make it publicly available.
+                  </p>
+                  <Button
+                    onClick={() => navigateTo(`#verify-contract?address=${address}`)}
+                    className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white"
+                  >
+                    <ShieldCheck className="w-4 h-4 mr-2" />
+                    Verify & Publish Source Code
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ============================================================================
+// VERIFY CONTRACT PAGE
+// ============================================================================
+const SOLC_VERSIONS = [
+  '0.8.24', '0.8.20', '0.8.17', '0.8.0',
+  '0.7.6', '0.6.12', '0.5.17', '0.4.24',
+];
+
+function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
+  const [address, setAddress] = useState(prefillAddress || '');
+  const [contractName, setContractName] = useState('');
+  const [compilerVersion, setCompilerVersion] = useState('0.8.24');
+  const [optimizationUsed, setOptimizationUsed] = useState(true);
+  const [optimizationRuns, setOptimizationRuns] = useState('200');
+  const [constructorArguments, setConstructorArguments] = useState('');
+  const [sourceCode, setSourceCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string; details?: string[] } | null>(null);
+
+  useEffect(() => {
+    if (prefillAddress) setAddress(prefillAddress);
+  }, [prefillAddress]);
+
+  const handleVerify = async () => {
+    if (!address.trim() || !contractName.trim() || !sourceCode.trim()) {
+      setResult({ success: false, message: 'Please fill in all required fields (Address, Contract Name, Source Code).' });
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+
+    try {
+      const res = await fetch('/api/verify-contract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: address.trim(),
+          sourceCode,
+          contractName: contractName.trim(),
+          compilerVersion,
+          optimizationUsed,
+          optimizationRuns: parseInt(optimizationRuns) || 200,
+          constructorArguments: constructorArguments.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      setResult({
+        success: data.success,
+        message: data.error || data.message,
+        details: data.details,
+      });
+    } catch {
+      setResult({ success: false, message: 'Network error. Please try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
       <Card className="border border-gray-200">
         <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-              Transactions
-            </CardTitle>
-            <Tabs value={tab} onValueChange={setTab}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="sent">Sent</TabsTrigger>
-                <TabsTrigger value="received">Received</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+            <ShieldCheck className="w-5 h-5 text-[#13b5c1]" />
+            Verify & Publish Contract Source Code
+          </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <TransactionsTable transactions={filteredTxs} loading={loadingTxs} />
+        <CardContent>
+          <p className="text-sm text-gray-500 mb-6">
+            Verify and publish your contract source code on {CHAIN_NAME} Explorer. The compiled bytecode will be compared against the deployed bytecode on-chain.
+          </p>
+
+          {/* Contract Address */}
+          <div className="space-y-2 mb-5">
+            <Label htmlFor="vc-address" className="text-sm font-medium text-gray-700">
+              Contract Address <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="vc-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="0x..."
+              className="font-mono text-sm"
+            />
           </div>
+
+          {/* Contract Name */}
+          <div className="space-y-2 mb-5">
+            <Label htmlFor="vc-name" className="text-sm font-medium text-gray-700">
+              Contract Name <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="vc-name"
+              value={contractName}
+              onChange={(e) => setContractName(e.target.value)}
+              placeholder="MyToken"
+              className="text-sm"
+            />
+          </div>
+
+          {/* Compiler & Version row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Compiler</Label>
+              <Select value="solc" disabled>
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="solc">Single part solc</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400">Currently only solc (Single part) is supported</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Compiler Version</Label>
+              <Select value={compilerVersion} onValueChange={setCompilerVersion}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOLC_VERSIONS.map((v) => (
+                    <SelectItem key={v} value={v}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Optimization */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Optimization</Label>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={optimizationUsed}
+                  onCheckedChange={setOptimizationUsed}
+                />
+                <span className="text-sm text-gray-600">
+                  {optimizationUsed ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            </div>
+            {optimizationUsed && (
+              <div className="space-y-2">
+                <Label htmlFor="vc-runs" className="text-sm font-medium text-gray-700">
+                  Optimization Runs
+                </Label>
+                <Input
+                  id="vc-runs"
+                  type="number"
+                  value={optimizationRuns}
+                  onChange={(e) => setOptimizationRuns(e.target.value)}
+                  className="text-sm font-mono"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Constructor Arguments */}
+          <div className="space-y-2 mb-5">
+            <Label htmlFor="vc-constructor" className="text-sm font-medium text-gray-700">
+              Constructor Arguments
+              <span className="text-xs text-gray-400 font-normal ml-1">(ABI-encoded, optional)</span>
+            </Label>
+            <Textarea
+              id="vc-constructor"
+              value={constructorArguments}
+              onChange={(e) => setConstructorArguments(e.target.value)}
+              placeholder="0x000000000000000000000000..."
+              className="text-sm font-mono min-h-[80px]"
+              rows={3}
+            />
+          </div>
+
+          {/* Source Code */}
+          <div className="space-y-2 mb-6">
+            <Label htmlFor="vc-source" className="text-sm font-medium text-gray-700">
+              Source Code <span className="text-red-500">*</span>
+            </Label>
+            <Textarea
+              id="vc-source"
+              value={sourceCode}
+              onChange={(e) => setSourceCode(e.target.value)}
+              placeholder="// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+contract MyToken { ... }"
+              className="text-sm font-mono min-h-[300px]"
+              rows={16}
+            />
+          </div>
+
+          {/* Result Messages */}
+          {result && (
+            <div className={`rounded-lg border p-4 mb-5 ${
+              result.success
+                ? 'bg-green-50 border-green-200 text-green-800'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              <div className="flex items-start gap-2">
+                {result.success ? (
+                  <Check className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="text-sm font-medium">{result.message}</p>
+                  {result.details && Array.isArray(result.details) && (
+                    <ul className="mt-2 space-y-1">
+                      {result.details.map((d, i) => (
+                        <li key={i} className="text-xs text-red-600 font-mono break-all">• {d}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Verify Button */}
+          <Button
+            onClick={handleVerify}
+            disabled={loading || !address.trim() || !contractName.trim() || !sourceCode.trim()}
+            className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white px-8"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Verifying & Compiling...
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="w-4 h-4 mr-2" />
+                Verify & Publish
+              </>
+            )}
+          </Button>
         </CardContent>
       </Card>
-      <SimplePagination currentPage={page} totalPages={100} onPageChange={setPage} />
     </div>
   );
 }
@@ -1997,12 +2389,17 @@ type ViewType =
   | { page: 'txs' }
   | { page: 'block'; blockNumber: number }
   | { page: 'tx'; txHash: string }
-  | { page: 'address'; address: string };
+  | { page: 'address'; address: string }
+  | { page: 'verify-contract'; prefillAddress?: string };
 
 function parseHash(hash: string): ViewType {
   if (!hash || hash === '#' || hash === '#home') return { page: 'home' };
   if (hash === '#blocks') return { page: 'blocks' };
   if (hash === '#txs') return { page: 'txs' };
+  if (hash === '#verify-contract' || hash.startsWith('#verify-contract?')) {
+    const addressMatch = hash.match(/[?&]address=(0x[a-fA-F0-9]+)/);
+    return { page: 'verify-contract', prefillAddress: addressMatch ? addressMatch[1] : undefined };
+  }
 
   const blockMatch = hash.match(/^#block\/(\d+)$/);
   if (blockMatch) return { page: 'block', blockNumber: parseInt(blockMatch[1]) };
@@ -2043,6 +2440,7 @@ export default function ExplorerApp() {
       case 'block': return `Block #${view.blockNumber} | ${CHAIN_NAME}`;
       case 'tx': return `Transaction | ${CHAIN_NAME}`;
       case 'address': return `Address ${shortHash(view.address)} | ${CHAIN_NAME}`;
+      case 'verify-contract': return `Verify Contract | ${CHAIN_NAME}`;
     }
   }, [view]);
 
@@ -2061,6 +2459,7 @@ export default function ExplorerApp() {
           {view.page === 'block' && <BlockDetailPage blockNumber={view.blockNumber} />}
           {view.page === 'tx' && <TransactionDetailPage txHash={view.txHash} />}
           {view.page === 'address' && <AddressDetailPage address={view.address} />}
+          {view.page === 'verify-contract' && <VerifyContractPage prefillAddress={view.prefillAddress} />}
         </main>
         <Footer />
       </TooltipProvider>

@@ -51,3 +51,22 @@ Stage Summary:
 - systemd 服务: exechain + exechain-tunnel (开机自启, 自动重启)
 - 密码: exechain2024
 - 钱包地址已更新 (与旧链不同)
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: ExeChain Explorer 升级 - 合约验证与开源代功能
+
+Work Log:
+- 安装 solc (Solidity 编译器) 和 ethers (合约交互库)
+- 创建 Prisma VerifiedContract 数据模型（address, name, compiler, version, sourceCode, abi 等）
+- 实现后端 API `/api/verify-contract`（编译、字节码比较、存储）
+- 在 Explorer 前端添加合约验证页面 (#verify-contract)
+- 在地址页面添加 Contract 标签页（显示已验证合约源码或提示验证）
+- 在导航栏添加 Verify Contract 入口
+
+Stage Summary:
+- 合约验证功能完整实现（对标 BscScan Verify & Publish）
+- 前端页面：表单（地址/名称/编译器版本/优化/源码）+ 成功/错误反馈
+- 后端 API：solc 编译 + 字节码比较 + SQLite 存储
+- 地址页 Contract 标签：已验证合约显示源码，未验证显示验证入口
