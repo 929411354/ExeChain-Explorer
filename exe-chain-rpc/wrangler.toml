@@ -5,3 +5,7 @@ compatibility_date = "2024-01-01"
 [[routes]]
 pattern = "rpc.exepc.top"
 custom_domain = true
+
+[[kv_namespaces]]
+binding = "CHAIN_KV"
+id = "ee79d015e942449c89bf7787ba27ae95"

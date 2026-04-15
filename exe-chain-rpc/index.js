@@ -416,10 +416,20 @@ function rHash64(){return "0x"+rHex(64);}
 
 if (!globalThis._rpcLog) globalThis._rpcLog = [];
 
-if (!globalThis._chainState) {
+// ============================================================
+// Genesis State Factory (deterministic, creates 500 blocks)
+// ============================================================
+function createGenesisState() {
   const rng = seededRng(8848);
-  const state = { blocks:[], transactions:[], blockNumber:0, pendingTx:[], txHashMap:{}, accounts:[] };
-  for (let i = 0; i < 25; i++) state.accounts.push(rng.addr());
+  const state = { blocks:[], transactions:[], blockNumber:0, pendingTx:[], txHashMap:{}, accounts:[], seededAccounts:[], balances:{}, nonces:{} };
+  const INITIAL_BALANCE = 10000n * BigInt(10**18);
+  for (let i = 0; i < 25; i++) {
+    const addr = rng.addr();
+    state.accounts.push(addr);
+    state.seededAccounts.push(addr); // Track original seeded accounts separately
+    state.balances[addr.toLowerCase()] = INITIAL_BALANCE;
+    state.nonces[addr.toLowerCase()] = 0;
+  }
   function createTx(bn, idx) {
     const from = rng.pick(state.accounts), to = rng.pick(state.accounts);
     const val = BigInt(rng.int(1,200000))*BigInt(10**15), gas = BigInt(rng.int(21000,100000)), gp = BigInt(rng.int(1,10)*1e9);
@@ -439,24 +449,152 @@ if (!globalThis._chainState) {
   let prevHash = "0x0000000000000000000000000000000000000000000000000000000000000000";
   for (let i=0;i<=500;i++) prevHash = createBlock(i, prevHash).hash;
   state.blockNumber = 500;
-  globalThis._chainState = state;
+  return state;
+}
+
+// ============================================================
+// KV State Persistence (write-through cache pattern)
+// ============================================================
+let _kvEnv = null;
+
+function setKVEnv(env) { _kvEnv = env; }
+
+async function loadChainState() {
+  // Always try KV first for cross-isolate consistency
+  if (_kvEnv && _kvEnv.CHAIN_KV) {
+    try {
+      const saved = await _kvEnv.CHAIN_KV.get("chain_state", "text");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.balances) {
+          for (const key in parsed.balances) {
+            parsed.balances[key] = BigInt(parsed.balances[key]);
+          }
+        }
+        globalThis._chainState = parsed;
+        return globalThis._chainState;
+      }
+    } catch(e) { /* KV read failed, fall through */ }
+  }
+  // No KV data - use in-memory or create genesis
+  if (!globalThis._chainState) {
+    globalThis._chainState = createGenesisState();
+    await saveChainState();
+  }
+  return globalThis._chainState;
+}
+
+async function saveChainState() {
+  if (!_kvEnv || !_kvEnv.CHAIN_KV || !globalThis._chainState) return;
+  try {
+    // Serialize state for KV (convert BigInt to string)
+    const state = globalThis._chainState;
+    const serializable = {
+      ...state,
+      balances: {},
+      nonces: { ...state.nonces },
+      // Keep all blocks and transactions for correct indexing
+      blocks: state.blocks,
+      transactions: state.transactions,
+    };
+    for (const key in state.balances) {
+      serializable.balances[key] = state.balances[key].toString();
+    }
+    const json = JSON.stringify(serializable);
+    await _kvEnv.CHAIN_KV.put("chain_state", json);
+  } catch(e) { /* KV write failed silently */ }
+}
+
+// Initialize with in-memory genesis (will be overwritten by KV on first load)
+if (!globalThis._chainState) {
+  globalThis._chainState = createGenesisState();
+}
+
+// Track if state was modified (needs KV save)
+let _stateDirty = false;
+
+// Ensure account exists with initial balance (faucet for new accounts)
+const FAUCET_AMOUNT = 10000n * BigInt(10**18); // 10,000 EXE for new accounts
+function ensureAccount(addr) {
+  const s = globalThis._chainState;
+  const key = (addr||'').toLowerCase();
+  if (!key || key === '0x0000000000000000000000000000000000000000' || key.length < 42) return;
+  if (!(key in s.balances)) {
+    s.balances[key] = FAUCET_AMOUNT;
+    s.nonces[key] = 0;
+    if (!s.accounts.find(a => a.toLowerCase() === key)) {
+      s.accounts.push(addr.startsWith('0x') ? addr : '0x' + addr);
+    }
+    _stateDirty = true; // Mark for KV save
+  }
+}
+
+// Balance helper functions
+function getBalance(addr) {
+  ensureAccount(addr);
+  const s = globalThis._chainState;
+  const key = (addr||'').toLowerCase();
+  return s.balances[key] || 0n;
+}
+function addBalance(addr, amount) {
+  const s = globalThis._chainState;
+  const key = (addr||'').toLowerCase();
+  if (!(key in s.balances)) s.balances[key] = 0n;
+  s.balances[key] += amount;
+  if (s.balances[key] < 0n) s.balances[key] = 0n;
+}
+function getNonce(addr) {
+  const s = globalThis._chainState;
+  const key = (addr||'').toLowerCase();
+  if (key in s.nonces) return s.nonces[key];
+  return 0;
+}
+function incrementNonce(addr) {
+  const s = globalThis._chainState;
+  const key = (addr||'').toLowerCase();
+  if (!(key in s.nonces)) s.nonces[key] = 0;
+  return s.nonces[key]++;
+}
+
+// Process balance changes for a transaction (deduct from sender, add to receiver)
+function processTxBalance(tx) {
+  if (!tx.from || !tx.to) return;
+  const value = hexToBigInt(tx.value);
+  const gasUsed = hexToBigInt(tx.gas);
+  const gasPrice = hexToBigInt(tx.gasPrice || tx.maxFeePerGas || '0x3b9aca00');
+  const totalCost = value + gasUsed * gasPrice;
+  // Deduct from sender
+  addBalance(tx.from, -totalCost);
+  // Add value to receiver
+  addBalance(tx.to, value);
 }
 
 function mineNewBlock() {
   const s = globalThis._chainState, n = s.blockNumber + 1;
   const pending = [...s.pendingTx]; s.pendingTx = [];
   const txs = [];
-  pending.forEach(tx => { tx.blockNumber = "0x"+n.toString(16); tx.transactionIndex = "0x"+txs.length.toString(16); txs.push(tx); });
-  const acc = s.accounts.length > 0 ? s.accounts : ["0x"+"0".repeat(40)];
+  // Process real pending transactions first (with balance changes)
+  pending.forEach(tx => {
+    tx.blockNumber = "0x"+n.toString(16);
+    tx.transactionIndex = "0x"+txs.length.toString(16);
+    txs.push(tx);
+    processTxBalance(tx);
+  });
+  // Only use seeded accounts for random background transactions (don't affect user wallets)
+  const seededAcc = (s.seededAccounts && s.seededAccounts.length > 0) ? s.seededAccounts : s.accounts.slice(0, 25);
   for (let i=0;i<(1+Math.floor(Math.random()*3));i++) {
-    const from=acc[Math.floor(Math.random()*acc.length)], to=acc[Math.floor(Math.random()*acc.length)];
+    const from=seededAcc[Math.floor(Math.random()*seededAcc.length)], to=seededAcc[Math.floor(Math.random()*seededAcc.length)];
     const val=BigInt(Math.floor(Math.random()*100000))*BigInt(10**15), gas=BigInt(21000+Math.floor(Math.random()*80000)), gp=BigInt(1e9+Math.floor(Math.random()*9e9));
-    txs.push({hash:rHash64(),nonce:"0x"+Math.floor(Math.random()*100).toString(16),blockHash:null,blockNumber:"0x"+n.toString(16),transactionIndex:"0x"+txs.length.toString(16),from,to,value:"0x"+val.toString(16),gas:"0x"+gas.toString(16),gasPrice:"0x"+gp.toString(16),input:"0x"});
+    const tx={hash:rHash64(),nonce:"0x"+Math.floor(Math.random()*100).toString(16),blockHash:null,blockNumber:"0x"+n.toString(16),transactionIndex:"0x"+txs.length.toString(16),from,to,value:"0x"+val.toString(16),gas:"0x"+gas.toString(16),gasPrice:"0x"+gp.toString(16),input:"0x"};
+    txs.push(tx);
+    processTxBalance(tx);
   }
   const hash = rHash64(), ts = Math.floor(Date.now()/1000);
   const gasUsed = txs.reduce((sum,t) => sum+BigInt(t.gas), BigInt(0));
-  const miner = acc[Math.floor(Math.random()*acc.length)];
+  const miner = seededAcc[Math.floor(Math.random()*seededAcc.length)];
   const parentHash = s.blocks[s.blockNumber] ? s.blocks[s.blockNumber].hash : "0x"+"0".repeat(64);
+  // Block reward: 2 EXE to miner (only seeded miners)
+  addBalance(miner, 2n * BigInt(10**18));
   const block = { number:"0x"+n.toString(16), hash, parentHash, nonce:"0x0000000000000000", sha3Uncles:"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347", logsBloom:"0x"+"0".repeat(512), transactionsRoot:rHash64(), stateRoot:rHash64(), receiptsRoot:rHash64(), miner, difficulty:"0x0", totalDifficulty:"0x"+(n+1).toString(16), extraData:"0x457865436861696e", size:"0x"+(500+Math.floor(Math.random()*500)).toString(16), gasLimit:"0x1c9c380", gasUsed:"0x"+gasUsed.toString(16), baseFeePerGas:"0x3b9aca00", timestamp:"0x"+ts.toString(16), transactions:txs.map(t=>t.hash), uncles:[], mixHash:rHash64() };
   txs.forEach(t=>{t.blockHash=hash;s.transactions.push(t);s.txHashMap[t.hash]=t;});
   s.blocks.push(block);
@@ -498,7 +636,11 @@ function handleRPC(method, params) {
     case "eth_coinbase": return s.accounts[0] || "0x"+"0".repeat(40);
     case "eth_hashrate": return "0x0";
     case "eth_accounts": return [];
-    case "eth_getBalance": return "0x84595161401484a000000";
+    case "eth_getBalance": {
+      const addr = (params[0]||'').toLowerCase();
+      const bal = getBalance(addr);
+      return bigIntToHex(bal);
+    }
     case "eth_getCode": return "0x";
     case "eth_call": return "0x";
     case "eth_getStorageAt": return "0x"+"0".repeat(64);
@@ -511,15 +653,23 @@ function handleRPC(method, params) {
 
     case "eth_getTransactionCount": {
       const addr = (params[0]||"").toLowerCase();
-      let count = s.pendingTx.filter(t=>t.from&&t.from.toLowerCase()===addr).length;
-      for(const tx of s.transactions) if(tx.from&&tx.from.toLowerCase()===addr) count++;
-      return "0x"+count.toString(16);
+      return "0x"+getNonce(addr).toString(16);
     }
 
     case "eth_sendTransaction": {
       const input = params[0]||{};
+      const from = input.from ? input.from.toLowerCase() : "0x"+rHex(40);
+      const to = input.to ? input.to.toLowerCase() : null;
+      const value = hexToBigInt(String(input.value||"0x0"));
+      const gas = hexToBigInt(String(input.gas||input.gasLimit||"0x5208"));
+      const gasPrice = hexToBigInt(String(input.gasPrice||"0x3b9aca00"));
+      const totalCost = value + gas * gasPrice;
+      // Check balance
+      const senderBal = getBalance(from);
+      if (senderBal < totalCost) throw new Error("insufficient funds for transfer: have " + senderBal.toString() + " need " + totalCost.toString());
+      const nonce = incrementNonce(from);
       const hash = rHash64();
-      const tx = { hash, nonce:"0x0", blockHash:null, blockNumber:null, transactionIndex:null, from:input.from||"0x"+rHex(40), to:input.to||"0x"+rHex(40), value:String(input.value||"0x0"), gas:String(input.gas||input.gasLimit||"0x5208"), gasPrice:String(input.gasPrice||"0x3b9aca00"), input:input.data||input.input||"0x", type:"0x2" };
+      const tx = { hash, nonce:"0x"+nonce.toString(16), blockHash:null, blockNumber:null, transactionIndex:null, from, to, value:"0x"+value.toString(16), gas:"0x"+gas.toString(16), gasPrice:"0x"+gasPrice.toString(16), input:input.data||input.input||"0x", type:"0x2" };
       s.pendingTx.push(tx); s.txHashMap[hash]=tx; mineNewBlock();
       return hash;
     }
@@ -532,12 +682,29 @@ function handleRPC(method, params) {
         if (hex.length === 0 || hex.length % 2 !== 0) throw new Error("Invalid hex length");
         const rawBytes = hexToBytes(hex);
         const hash = '0x' + bytesToHex(keccak256(rawBytes));
+        // Check for duplicate
+        if (s.txHashMap[hash]) throw new Error("already known");
         let decoded = null;
         try { decoded = decodeRawTransaction(rawHex); } catch(e) { /* ok */ }
         let tx;
-        if (decoded && decoded.hash) {
-          tx = { hash:decoded.hash, nonce:decoded.nonce||"0x0", blockHash:null, blockNumber:null, transactionIndex:null, from:decoded.from||"0x"+rHex(40), to:decoded.to||"0x"+rHex(40), value:decoded.value||"0x0", gas:decoded.gas||"0x5208", gasPrice:decoded.gasPrice||decoded.maxFeePerGas||"0x3b9aca00", maxFeePerGas:decoded.maxFeePerGas||decoded.gasPrice||"0x77359400", maxPriorityFeePerGas:decoded.maxPriorityFeePerGas||"0x3b9aca00", input:decoded.input||"0x", type:decoded.type||"0x2", v:decoded.v, r:decoded.r, s:decoded.s };
+        if (decoded && decoded.hash && decoded.from) {
+          const fromAddr = decoded.from.toLowerCase();
+          const value = hexToBigInt(decoded.value||"0x0");
+          const gas = hexToBigInt(decoded.gas||"0x5208");
+          const gasPrice = hexToBigInt(decoded.gasPrice||decoded.maxFeePerGas||"0x3b9aca00");
+          const totalCost = value + gas * gasPrice;
+          // Check balance
+          const senderBal = getBalance(fromAddr);
+          if (senderBal < totalCost) throw new Error("insufficient funds for transfer: have " + senderBal.toString() + " need " + totalCost.toString());
+          // Validate nonce
+          const expectedNonce = getNonce(fromAddr);
+          const txNonce = hexToBigInt(decoded.nonce||"0x0");
+          if (txNonce !== BigInt(expectedNonce)) throw new Error("nonce too low: expected " + expectedNonce + " got " + txNonce.toString());
+          // Increment nonce
+          incrementNonce(fromAddr);
+          tx = { hash:decoded.hash, nonce:decoded.nonce||"0x0", blockHash:null, blockNumber:null, transactionIndex:null, from:decoded.from, to:decoded.to, value:decoded.value||"0x0", gas:decoded.gas||"0x5208", gasPrice:decoded.gasPrice||decoded.maxFeePerGas||"0x3b9aca00", maxFeePerGas:decoded.maxFeePerGas||decoded.gasPrice||"0x77359400", maxPriorityFeePerGas:decoded.maxPriorityFeePerGas||"0x3b9aca00", input:decoded.input||"0x", type:decoded.type||"0x2", v:decoded.v, r:decoded.r, s:decoded.s };
         } else {
+          // Fallback for undecodable transactions
           tx = { hash, nonce:"0x0", blockHash:null, blockNumber:null, transactionIndex:null, from:"0x"+rHex(40), to:"0x"+rHex(40), value:"0x0", gas:"0x5208", gasPrice:"0x3b9aca00", input:"0x", type:"0x2" };
         }
         s.pendingTx.push(tx); s.txHashMap[hash]=tx; mineNewBlock();
@@ -608,13 +775,12 @@ function handleRPC(method, params) {
         baseFeePerGasArr.push(baseFee);
         rewards.push(rewardPercentiles.map(() => baseFee));
       }
-      baseFeePerGasArr.push(baseFee);
+      baseFeePerGasArr.push(baseFee); // +1 for next block prediction
       return {
         oldestBlock: "0x"+oldestBlock.toString(16),
-        baseFeePerGas: baseFee,
+        baseFeePerGas: baseFeePerGasArr,
         gasUsedRatio,
         reward: rewardPercentiles.length > 0 ? rewards : [],
-        baseFeePerGasArr
       };
     }
 
@@ -626,10 +792,13 @@ function handleRPC(method, params) {
 // Worker Entry Point
 // ============================================================
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const CORS = { "Access-Control-Allow-Origin":"*", "Access-Control-Allow-Methods":"POST, GET, OPTIONS", "Access-Control-Allow-Headers":"Content-Type, Authorization" };
     const JSON_HDR = {"Content-Type":"application/json"};
+
+    // Set up KV environment for state persistence
+    setKVEnv(env);
 
     if (request.method === "OPTIONS") return new Response(null, {headers: CORS});
 
@@ -642,7 +811,7 @@ export default {
     }
 
     if (request.method === "GET") {
-      const s = globalThis._chainState;
+      const s = await loadChainState();
       return new Response(JSON.stringify({service:"Exe Chain RPC",chainId:CHAIN_ID,chainName:"Exe Chain",nativeToken:"EXE",blockNumber:s.blockNumber,network:"mainnet",consensus:"Clique PoA"}), {headers:{...CORS,...JSON_HDR}});
     }
 
@@ -653,8 +822,17 @@ export default {
         return new Response(JSON.stringify({jsonrpc:"2.0",error:{code:-32700,message:"Parse error: "+e.message},id:null}), {status:400,headers:{...CORS,...JSON_HDR}});
       }
 
+      // Load state from KV for every request
+      _stateDirty = false;
+      await loadChainState();
+
+      // Track if we need to persist (write operations)
+      let isWriteOp = false;
+
       if (Array.isArray(rpc)) {
         const responses = rpc.map(req => {
+          const m = (req.method||"").toLowerCase();
+          if (m === 'eth_sendrawtransaction' || m === 'eth_sendtransaction') isWriteOp = true;
           try {
             const result = handleRPC(req.method||"", req.params||[]);
             if (result === undefined) return {jsonrpc:"2.0",error:{code:-32601,message:"Method not found: "+(req.method||"")},id:req.id||null};
@@ -667,12 +845,16 @@ export default {
             return {jsonrpc:"2.0",error:{code:-32000,message:e.message||"Internal error"},id:req.id||null};
           }
         });
+        if (isWriteOp || _stateDirty) await saveChainState();
         return new Response(JSON.stringify(responses), {headers:{...CORS,...JSON_HDR}});
       }
 
       const method = rpc.method || "";
       const params = rpc.params || [];
-      if (Math.random() < 0.08) mineNewBlock();
+      const methodLower = method.toLowerCase();
+      if (methodLower === 'eth_sendrawtransaction' || methodLower === 'eth_sendtransaction') isWriteOp = true;
+      
+      if (Math.random() < 0.08) { mineNewBlock(); isWriteOp = true; }
 
       let result;
       try { result = handleRPC(method, params); } catch(e) {
@@ -685,6 +867,9 @@ export default {
       }
       globalThis._rpcLog.push({method, ts:Date.now(), hasResult:true, resultPreview:typeof result==='string'?result.slice(0,66):typeof result==='object'?JSON.stringify(result).slice(0,200):String(result)});
       if (globalThis._rpcLog.length > 100) globalThis._rpcLog.shift();
+
+      // Persist state to KV after write operations or dirty state (e.g. faucet funding)
+      if (isWriteOp || _stateDirty) await saveChainState();
 
       return new Response(JSON.stringify({jsonrpc:"2.0",result,id:rpc.id||null}), {headers:{...CORS,...JSON_HDR}});
     } catch(e) {
