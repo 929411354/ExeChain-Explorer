@@ -29,8 +29,10 @@ import {
   Home, Blocks, FileText, Activity, ArrowRight, ExternalLink, Menu, X,
   Cuboid, Hash, Wallet, Cpu, Zap, TrendingUp, CircleDot, AlertCircle,
   ShieldCheck, FileCode2, Loader2, Code2, Coins, Image, Trophy, ScrollText,
-  BookOpen, PenTool, Landmark,
+  BookOpen, PenTool, Landmark, Wrench, Play, Binary, RefreshCw, BarChart3,
+  Timer, Send, ArrowUpDown, RotateCcw,
 } from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -104,6 +106,126 @@ const KNOWN_EVENTS: Record<string, string> = {
   '0x34fcbac00c1b92bc68e7ef0a71e0e4e9106bb8b1c5c0c886c4a4b9e4c78b2b8c': 'Paused',
   '0x5c975abb2ef2272708b0c9ee82187b1d34b56bb8ee085081782564b4b6b9ee6ac': 'Unpaused',
 };
+
+
+// EVM Opcode lookup table
+const EVM_OPCODES: Record<number, { name: string; pushSize?: number; input: number; output: number }> = {
+  0x00: { name: 'STOP', input: 0, output: 0 },
+  0x01: { name: 'ADD', input: 2, output: 1 },
+  0x02: { name: 'MUL', input: 2, output: 1 },
+  0x03: { name: 'SUB', input: 2, output: 1 },
+  0x04: { name: 'DIV', input: 2, output: 1 },
+  0x05: { name: 'SDIV', input: 2, output: 1 },
+  0x06: { name: 'MOD', input: 2, output: 1 },
+  0x07: { name: 'SMOD', input: 2, output: 1 },
+  0x08: { name: 'ADDMOD', input: 3, output: 1 },
+  0x09: { name: 'MULMOD', input: 3, output: 1 },
+  0x0a: { name: 'EXP', input: 2, output: 1 },
+  0x0b: { name: 'SIGNEXTEND', input: 2, output: 1 },
+  0x10: { name: 'LT', input: 2, output: 1 },
+  0x11: { name: 'GT', input: 2, output: 1 },
+  0x12: { name: 'SLT', input: 2, output: 1 },
+  0x13: { name: 'SGT', input: 2, output: 1 },
+  0x14: { name: 'EQ', input: 2, output: 1 },
+  0x15: { name: 'ISZERO', input: 1, output: 1 },
+  0x16: { name: 'AND', input: 2, output: 1 },
+  0x17: { name: 'OR', input: 2, output: 1 },
+  0x18: { name: 'XOR', input: 2, output: 1 },
+  0x19: { name: 'NOT', input: 1, output: 1 },
+  0x1a: { name: 'BYTE', input: 2, output: 1 },
+  0x1b: { name: 'SHL', input: 2, output: 1 },
+  0x1c: { name: 'SHR', input: 2, output: 1 },
+  0x1d: { name: 'SAR', input: 2, output: 1 },
+  0x20: { name: 'SHA3', input: 2, output: 1 },
+  0x30: { name: 'ADDRESS', input: 0, output: 1 },
+  0x31: { name: 'BALANCE', input: 1, output: 1 },
+  0x32: { name: 'ORIGIN', input: 0, output: 1 },
+  0x33: { name: 'CALLER', input: 0, output: 1 },
+  0x34: { name: 'CALLVALUE', input: 0, output: 1 },
+  0x35: { name: 'CALLDATALOAD', input: 1, output: 1 },
+  0x36: { name: 'CALLDATASIZE', input: 0, output: 1 },
+  0x37: { name: 'CALLDATACOPY', input: 3, output: 0 },
+  0x38: { name: 'CODESIZE', input: 0, output: 1 },
+  0x39: { name: 'CODECOPY', input: 3, output: 0 },
+  0x3a: { name: 'GASPRICE', input: 0, output: 1 },
+  0x3b: { name: 'EXTCODESIZE', input: 1, output: 1 },
+  0x3c: { name: 'EXTCODECOPY', input: 4, output: 0 },
+  0x3d: { name: 'RETURNDATASIZE', input: 0, output: 1 },
+  0x3e: { name: 'RETURNDATACOPY', input: 3, output: 0 },
+  0x40: { name: 'BLOCKHASH', input: 1, output: 1 },
+  0x41: { name: 'COINBASE', input: 0, output: 1 },
+  0x42: { name: 'TIMESTAMP', input: 0, output: 1 },
+  0x43: { name: 'NUMBER', input: 0, output: 1 },
+  0x44: { name: 'DIFFICULTY', input: 0, output: 1 },
+  0x45: { name: 'GASLIMIT', input: 0, output: 1 },
+  0x46: { name: 'CHAINID', input: 0, output: 1 },
+  0x47: { name: 'SELFBALANCE', input: 0, output: 1 },
+  0x48: { name: 'BASEFEE', input: 0, output: 1 },
+  0x50: { name: 'POP', input: 1, output: 0 },
+  0x51: { name: 'MLOAD', input: 1, output: 1 },
+  0x52: { name: 'MSTORE', input: 2, output: 0 },
+  0x53: { name: 'MSTORE8', input: 2, output: 0 },
+  0x54: { name: 'SLOAD', input: 1, output: 1 },
+  0x55: { name: 'SSTORE', input: 2, output: 0 },
+  0x56: { name: 'JUMP', input: 1, output: 0 },
+  0x57: { name: 'JUMPI', input: 2, output: 0 },
+  0x58: { name: 'PC', input: 0, output: 1 },
+  0x59: { name: 'MSIZE', input: 0, output: 1 },
+  0x5a: { name: 'GAS', input: 0, output: 1 },
+  0x5b: { name: 'JUMPDEST', input: 0, output: 0 },
+  0x5f: { name: 'PUSH0', input: 0, output: 1 },
+  0xf0: { name: 'CREATE', input: 3, output: 1 },
+  0xf1: { name: 'CALL', input: 7, output: 1 },
+  0xf2: { name: 'CALLCODE', input: 7, output: 1 },
+  0xf3: { name: 'RETURN', input: 2, output: 0 },
+  0xf4: { name: 'DELEGATECALL', input: 6, output: 1 },
+  0xf5: { name: 'CREATE2', input: 4, output: 1 },
+  0xfa: { name: 'STATICCALL', input: 6, output: 1 },
+  0xfd: { name: 'REVERT', input: 2, output: 0 },
+  0xfe: { name: 'INVALID', input: 0, output: 0 },
+  0xff: { name: 'SELFDESTRUCT', input: 1, output: 0 },
+};
+// Generate PUSH1-PUSH32 entries
+for (let i = 1; i <= 32; i++) {
+  EVM_OPCODES[0x5f + i] = { name: `PUSH${i}`, pushSize: i, input: 0, output: 1 };
+}
+// Generate DUP1-DUP16 entries
+for (let i = 1; i <= 16; i++) {
+  EVM_OPCODES[0x7f + i] = { name: `DUP${i}`, input: i, output: i + 1 };
+}
+// Generate SWAP1-SWAP16 entries
+for (let i = 1; i <= 16; i++) {
+  EVM_OPCODES[0x8f + i] = { name: `SWAP${i}`, input: i + 1, output: i + 1 };
+}
+// Generate LOG0-LOG4 entries
+for (let i = 0; i <= 4; i++) {
+  EVM_OPCODES[0xa0 + i] = { name: `LOG${i}`, input: i + 2, output: 0 };
+}
+
+function disassembleBytecode(bytecode: string): { offset: number; opcode: string; operand: string }[] {
+  const clean = bytecode.replace(/^0x/, '');
+  const result: { offset: number; opcode: string; operand: string }[] = [];
+  let i = 0;
+  while (i < clean.length) {
+    const byte = parseInt(clean.slice(i, i + 2), 16);
+    const offset = i / 2;
+    const op = EVM_OPCODES[byte];
+    if (!op) {
+      result.push({ offset, opcode: `UNKNOWN(0x${byte.toString(16).padStart(2, '0')})`, operand: '' });
+      i += 2;
+      continue;
+    }
+    if (op.pushSize !== undefined) {
+      const operandHex = clean.slice(i + 2, i + 2 + op.pushSize * 2);
+      result.push({ offset, opcode: op.name, operand: operandHex ? `0x${operandHex}` : '' });
+      i += 2 + op.pushSize * 2;
+    } else {
+      result.push({ offset, opcode: op.name, operand: '' });
+      i += 2;
+    }
+  }
+  return result;
+}
 
 
 // ============================================================================
@@ -1004,8 +1126,23 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
 
   const handleSearch = useCallback(() => {
     if (!searchInput.trim()) return;
+    const trimmed = searchInput.trim();
     const parsed = parseSearchInput(searchInput);
     const type = detectSearchType(parsed);
+
+    // Token/NFT name search
+    if (type === 'unknown') {
+      const discovered = getDiscoveredTokens();
+      const match = Object.values(discovered).find(
+        t => t.name.toLowerCase() === trimmed.toLowerCase() || t.symbol.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (match) {
+        onNavigate(`#address/${match.address}`);
+        setSearchInput('');
+        setMobileMenuOpen(false);
+        return;
+      }
+    }
 
     if (searchFilter === 'all') {
       if (type === 'block') onNavigate(`#block/${parsed}`);
@@ -1024,13 +1161,23 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
     setMobileMenuOpen(false);
   }, [searchInput, searchFilter, onNavigate]);
 
-  const navItems = [
+  const mainNavItems = [
     { hash: '#home', icon: Home, label: 'Home' },
     { hash: '#blocks', icon: Blocks, label: 'Blocks' },
     { hash: '#txs', icon: FileText, label: 'Transactions' },
+    { hash: '#pending-txs', icon: Clock, label: 'Pending' },
     { hash: '#tokens', icon: Coins, label: 'Tokens' },
     { hash: '#nfts', icon: Image, label: 'NFTs' },
     { hash: '#top-accounts', icon: Trophy, label: 'Top Accounts' },
+    { hash: '#validators', icon: Landmark, label: 'Validators' },
+    { hash: '#verified-contracts', icon: ShieldCheck, label: 'Verified' },
+    { hash: '#charts', icon: BarChart3, label: 'Charts' },
+  ];
+
+  const toolsItems = [
+    { hash: '#broadcast-txn', icon: Send, label: 'Broadcast TXN' },
+    { hash: '#unit-converter', icon: ArrowUpDown, label: 'Unit Converter' },
+    { hash: '#bytecode-to-opcode', icon: Binary, label: 'Bytecode to Opcode' },
     { hash: '#verify-contract', icon: ShieldCheck, label: 'Verify Contract' },
   ];
 
@@ -1050,7 +1197,7 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
 
           {/* Desktop Nav */}
           <nav className="hidden lg:flex items-center gap-0.5 ml-1 overflow-x-auto">
-            {navItems.map((item) => (
+            {mainNavItems.map((item) => (
               <button
                 key={item.hash}
                 onClick={() => onNavigate(item.hash)}
@@ -1060,6 +1207,24 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
                 {item.label}
               </button>
             ))}
+            {/* Tools Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="px-2.5 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                  <Wrench className="w-3.5 h-3.5" />
+                  Tools
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                {toolsItems.map((item) => (
+                  <DropdownMenuItem key={item.hash} onClick={() => onNavigate(item.hash)} className="flex items-center gap-2 cursor-pointer">
+                    <item.icon className="w-4 h-4 text-gray-500" />
+                    <span>{item.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </nav>
 
           {/* Search Bar */}
@@ -1074,6 +1239,7 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
                   <SelectItem value="blocks">Blocks</SelectItem>
                   <SelectItem value="transactions">Transactions</SelectItem>
                   <SelectItem value="addresses">Addresses</SelectItem>
+                  <SelectItem value="tokens">Tokens</SelectItem>
                 </SelectContent>
               </Select>
               <Input
@@ -1081,7 +1247,7 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="Search by Address / Txn Hash / Block"
+                placeholder="Search by Address / Txn Hash / Block / Token Name"
                 className="h-10 border-0 rounded-none text-sm focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
               />
               <button
@@ -1106,7 +1272,16 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
         {mobileMenuOpen && (
           <div className="lg:hidden pb-3 border-t border-white/20 mt-1 pt-2">
             <nav className="grid grid-cols-2 gap-1">
-              {navItems.map((item) => (
+              {mainNavItems.map((item) => (
+                <button
+                  key={item.hash}
+                  onClick={() => { onNavigate(item.hash); setMobileMenuOpen(false); }}
+                  className="px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-md text-left transition-colors flex items-center gap-2"
+                >
+                  <item.icon className="w-4 h-4" /> {item.label}
+                </button>
+              ))}
+              {toolsItems.map((item) => (
                 <button
                   key={item.hash}
                   onClick={() => { onNavigate(item.hash); setMobileMenuOpen(false); }}
@@ -1127,15 +1302,26 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
 // ============================================================================
 // GAS TRACKER COMPONENT
 // ============================================================================
-function GasTracker() {
+function EnhancedGasTracker() {
   const [gasPrice, setGasPrice] = useState<string | null>(null);
+  const [lastBlockGasUsed, setLastBlockGasUsed] = useState<number | null>(null);
+  const [lastBlockGasLimit, setLastBlockGasLimit] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
     const fetchGas = async () => {
       try {
-        const price = await rpcCall('eth_gasPrice');
+        const [price, latestHex] = await Promise.all([
+          rpcCall('eth_gasPrice'),
+          rpcCall('eth_blockNumber'),
+        ]);
         if (mounted) setGasPrice(price);
+        const latestBlock = hexToNumber(latestHex);
+        const block = await rpcCall('eth_getBlockByNumber', [`0x${latestBlock.toString(16)}`, false]);
+        if (mounted && block) {
+          setLastBlockGasUsed(hexToNumber(block.gasUsed));
+          setLastBlockGasLimit(hexToNumber(block.gasLimit));
+        }
       } catch { /* ignore */ }
     };
     fetchGas();
@@ -1146,32 +1332,47 @@ function GasTracker() {
   const gwei = gasPrice ? weiToGwei(gasPrice) : '--';
   const slow = gasPrice ? (Number(gwei) * 0.8).toFixed(2) : '--';
   const fast = gasPrice ? (Number(gwei) * 1.2).toFixed(2) : '--';
+  const gasUtil = lastBlockGasUsed !== null && lastBlockGasLimit !== null
+    ? ((lastBlockGasUsed / lastBlockGasLimit) * 100).toFixed(1) : null;
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium uppercase tracking-wide">
         <Fuel className="w-3.5 h-3.5" />
         Gas Tracker
       </div>
       <div className="flex items-center gap-3">
         <div className="text-center">
-          <div className="text-[10px] text-gray-400 uppercase">Slow</div>
+          <div className="text-[10px] text-gray-400 uppercase">
+            <Timer className="w-3 h-3 inline mr-0.5" />~30s
+          </div>
           <div className="text-sm font-mono font-semibold text-gray-700">{slow}</div>
           <div className="text-[10px] text-gray-400">Gwei</div>
         </div>
         <div className="h-6 w-px bg-gray-200" />
         <div className="text-center">
-          <div className="text-[10px] text-[#13b5c1] uppercase font-medium">Standard</div>
+          <div className="text-[10px] text-[#13b5c1] uppercase font-medium">
+            <Clock className="w-3 h-3 inline mr-0.5" />~15s
+          </div>
           <div className="text-sm font-mono font-bold text-[#13b5c1]">{gwei}</div>
           <div className="text-[10px] text-gray-400">Gwei</div>
         </div>
         <div className="h-6 w-px bg-gray-200" />
         <div className="text-center">
-          <div className="text-[10px] text-gray-400 uppercase">Fast</div>
+          <div className="text-[10px] text-gray-400 uppercase">
+            <Zap className="w-3 h-3 inline mr-0.5" />~5s
+          </div>
           <div className="text-sm font-mono font-semibold text-gray-700">{fast}</div>
           <div className="text-[10px] text-gray-400">Gwei</div>
         </div>
       </div>
+      {gasUtil !== null && (
+        <div className="flex items-center gap-2 text-[11px] text-gray-500 pt-1 border-t border-gray-100">
+          <span>Last Block Gas:</span>
+          <span className="font-mono text-gray-700">{lastBlockGasUsed?.toLocaleString()} / {lastBlockGasLimit?.toLocaleString()}</span>
+          <span className="font-mono font-semibold text-[#13b5c1]">({gasUtil}%)</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1651,7 +1852,7 @@ function HomePage({ onNavigate }: { onNavigate: (hash: string) => void }) {
       <StatsBar blockNumber={blockNumber} />
       <Card className="border border-gray-200">
         <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <GasTracker />
+          <EnhancedGasTracker />
           <div className="flex items-center gap-2 text-xs text-gray-400">
             <Clock className="w-3.5 h-3.5" />
             <span>Last updated: {new Date().toLocaleTimeString()}</span>
@@ -2273,19 +2474,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
       )}
 
       {/* Internal Transactions */}
-      <Card className="border border-gray-200">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-            Internal Transactions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8 text-gray-400">
-            <p className="text-sm">No internal transactions found</p>
-          </div>
-        </CardContent>
-      </Card>
+      <InternalTransactionsCard txHash={txHash} blockNumber={tx.blockNumber ? hexToNumber(tx.blockNumber) : null} />
     </div>
   );
 }
@@ -2840,6 +3029,9 @@ function AddressDetailPage({ address }: { address: string }) {
             <TabsList className="flex-wrap h-auto gap-1">
               <TabsTrigger value="transactions"><FileText className="w-4 h-4 mr-1.5" />Transactions</TabsTrigger>
               <TabsTrigger value="token-holdings"><Coins className="w-4 h-4 mr-1.5" />Token Holdings</TabsTrigger>
+              {tokenInfo && tokenInfo.type === 'ERC20' && (
+                <TabsTrigger value="token-transfers"><ArrowLeftRight className="w-4 h-4 mr-1.5" />Token Transfers</TabsTrigger>
+              )}
               <TabsTrigger value="nft-holdings"><Image className="w-4 h-4 mr-1.5" />NFT Holdings</TabsTrigger>
               <TabsTrigger value="contract"><FileCode2 className="w-4 h-4 mr-1.5" />Contract</TabsTrigger>
               {verifiedContract?.abi && (
@@ -2893,6 +3085,25 @@ function AddressDetailPage({ address }: { address: string }) {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {tokenInfo && tokenInfo.type === 'ERC20' && (
+          <TabsContent value="token-transfers">
+            <Card className="border border-gray-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                  <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+                  <ArrowLeftRight className="w-4 h-4 text-gray-500" />
+                  Token Transfers ({tokenInfo.symbol})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <TokenTransfersTab tokenAddress={address} decimals={tokenInfo.decimals} symbol={tokenInfo.symbol} />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
         <TabsContent value="nft-holdings">
           <Card className="border border-gray-200">
@@ -3555,6 +3766,1108 @@ function VerifyContractPage({ prefillAddress }: { prefillAddress?: string }) {
 }
 
 // ============================================================================
+// INTERNAL TRANSACTIONS CARD
+// ============================================================================
+function InternalTransactionsCard({ txHash, blockNumber }: { txHash: string; blockNumber: number | null }) {
+  const [traces, setTraces] = useState<{ from: string; to: string; value: string; type: string; index: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [traceAvailable, setTraceAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!txHash) return;
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+    setTraceAvailable(null);
+
+    rpcCall('debug_traceTransaction', [txHash, { tracer: 'callTracer' }])
+      .then((result) => {
+        if (!mounted) return;
+        setTraceAvailable(true);
+        const calls: { from: string; to: string; value: string; type: string; index: number }[] = [];
+        if (result && typeof result === 'object') {
+          const extractCalls = (node: Record<string, unknown>, depth: number) => {
+            if (node.to && node.from) {
+              calls.push({
+                from: node.from as string,
+                to: node.to as string,
+                value: (node.value as string) || '0x0',
+                type: (node.type as string) || 'call',
+                index: calls.length,
+              });
+            }
+            if (Array.isArray(node.calls)) {
+              for (const child of node.calls) {
+                extractCalls(child as Record<string, unknown>, depth + 1);
+              }
+            }
+          };
+          extractCalls(result, 0);
+        }
+        setTraces(calls);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (mounted) {
+          setTraceAvailable(false);
+          setLoading(false);
+          setError('Debug API not available. Internal transaction tracing requires the debug_traceTransaction RPC endpoint to be enabled.');
+        }
+      });
+
+    return () => { mounted = false; };
+  }, [txHash]);
+
+  return (
+    <Card className="border border-gray-200">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+          <ArrowLeftRight className="w-4 h-4 text-gray-500" />
+          Internal Transactions
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <TableSkeleton rows={3} cols={5} />
+        ) : error || !traceAvailable ? (
+          <div className="text-center py-6 text-gray-400">
+            <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">{error || 'Internal transactions not available'}</p>
+            <p className="text-xs mt-1 text-gray-300">The debug API (debug_traceTransaction) must be enabled on the node</p>
+          </div>
+        ) : traces.length === 0 ? (
+          <div className="text-center py-6 text-gray-400">
+            <p className="text-sm">No internal transactions found</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase w-12">#</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase">Parent Txn Hash</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase">Block</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase">From</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">To</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase text-right">Value</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">Type</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {traces.map((trace, idx) => (
+                <TableRow key={idx} className="text-sm">
+                  <TableCell className="text-gray-400 text-xs">{idx + 1}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => navigateTo(`#tx/${txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        {shortHash(txHash)}
+                      </button>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {blockNumber !== null ? (
+                      <button onClick={() => navigateTo(`#block/${blockNumber}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        {blockNumber.toLocaleString()}
+                      </button>
+                    ) : '--'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => navigateTo(`#address/${trace.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        {shortHash(trace.from)}
+                      </button>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => navigateTo(`#address/${trace.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        {shortHash(trace.to)}
+                      </button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {weiToExe(trace.value) === '0' ? '0' : `${weiToExe(trace.value)}`} <span className="text-gray-400">{NATIVE_TOKEN}</span>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">{trace.type}</Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// TOKEN TRANSFERS TAB
+// ============================================================================
+function TokenTransfersTab({ tokenAddress, decimals, symbol }: { tokenAddress: string; decimals: number; symbol: string }) {
+  const [transfers, setTransfers] = useState<{ txHash: string; from: string; to: string; value: string; blockNumber: number; timestamp: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const perPage = 50;
+  const [totalResults, setTotalResults] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+
+    const fetchTransfers = async () => {
+      try {
+        const latestHex = await rpcCall('eth_blockNumber');
+        const latestBlock = hexToNumber(latestHex);
+        const fromBlock = latestBlock - 5000;
+
+        const logs = await rpcCall('eth_getLogs', [{
+          fromBlock: `0x${Math.max(0, fromBlock).toString(16)}`,
+          toBlock: 'latest',
+          address: tokenAddress,
+          topics: [TRANSFER_EVENT_TOPIC],
+        }]) as RpcLog[];
+
+        if (!mounted) return;
+
+        const allTransfers = (logs || [])
+          .map((log) => ({
+            txHash: log.transactionHash,
+            from: topicToAddress(log.topics[1] || '0x'),
+            to: topicToAddress(log.topics[2] || '0x'),
+            value: log.data || '0x0',
+            blockNumber: hexToNumber(log.blockNumber),
+            timestamp: 0,
+          }));
+
+        setTotalResults(allTransfers.length);
+
+        // Fetch timestamps for paged results
+        const paged = allTransfers.slice((page - 1) * perPage, page * perPage);
+        const blockNumbers = [...new Set(paged.map(t => t.blockNumber))];
+
+        const blockTimestamps: Record<number, number> = {};
+        await Promise.all(blockNumbers.map(async (bn) => {
+          try {
+            const block = await rpcCall('eth_getBlockByNumber', [`0x${bn.toString(16)}`, false]);
+            if (block) blockTimestamps[bn] = hexToNumber(block.timestamp) * 1000;
+          } catch { /* skip */ }
+        }));
+
+        if (mounted) {
+          setTransfers(paged.map(t => ({ ...t, timestamp: blockTimestamps[t.blockNumber] || 0 })));
+          setLoading(false);
+        }
+      } catch (e) {
+        if (mounted) {
+          setError(e instanceof Error ? e.message : 'Failed to fetch token transfers');
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchTransfers();
+    return () => { mounted = false; };
+  }, [tokenAddress, page]);
+
+  if (loading) return <div className="py-8"><TableSkeleton rows={5} cols={5} /></div>;
+
+  if (error) {
+    return (
+      <div className="text-center py-8 text-gray-400">
+        <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">{error}</p>
+      </div>
+    );
+  }
+
+  if (transfers.length === 0) {
+    return (
+      <div className="text-center py-10 text-gray-400">
+        <ArrowLeftRight className="w-10 h-10 mx-auto mb-3 opacity-50" />
+        <p className="text-sm">No token transfers found in the last 5000 blocks</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
+            <TableHead className="text-xs font-semibold text-gray-500 uppercase">TX Hash</TableHead>
+            <TableHead className="text-xs font-semibold text-gray-500 uppercase">Age</TableHead>
+            <TableHead className="text-xs font-semibold text-gray-500 uppercase">From</TableHead>
+            <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">To</TableHead>
+            <TableHead className="text-xs font-semibold text-gray-500 uppercase text-right">Value</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {transfers.map((t, idx) => (
+            <TableRow key={`${t.txHash}-${idx}`} className="text-sm">
+              <TableCell>
+                <button onClick={() => navigateTo(`#tx/${t.txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                  {shortHash(t.txHash)}
+                </button>
+              </TableCell>
+              <TableCell className="text-gray-500 text-xs whitespace-nowrap">
+                {t.timestamp ? timeAgo(t.timestamp) : '--'}
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => navigateTo(`#address/${t.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                    {shortHash(t.from)}
+                  </button>
+                </div>
+              </TableCell>
+              <TableCell className="text-center">
+                <button onClick={() => navigateTo(`#address/${t.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                  {shortHash(t.to)}
+                </button>
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs">
+                {formatTokenBalance(t.value, decimals)} <span className="text-gray-400">{symbol}</span>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <div className="mt-4">
+        <SimplePagination currentPage={page} totalPages={Math.max(1, Math.ceil(totalResults / perPage))} onPageChange={setPage} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// PENDING TRANSACTIONS PAGE
+// ============================================================================
+function PendingTransactionsPage() {
+  const [pendingTxs, setPendingTxs] = useState<{ from: string; to: string; value: string; gasPrice: string; nonce: number; hash: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+
+  const fetchPending = useCallback(async () => {
+    try {
+      const result = await rpcCall('txpool_content');
+      if (!result || typeof result !== 'object') {
+        setPendingTxs([]);
+        setError(null);
+        return;
+      }
+      const txs: { from: string; to: string; value: string; gasPrice: string; nonce: number; hash: string }[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pool = result as Record<string, any>;
+      for (const addr of Object.keys(pool)) {
+        const pending = pool[addr]?.pending || {};
+        const queued = pool[addr]?.queued || {};
+        for (const nonceStr of Object.keys(pending)) {
+          const tx = pending[nonceStr];
+          txs.push({
+            from: addr,
+            to: tx.to || '0x',
+            value: tx.value || '0x0',
+            gasPrice: tx.gasPrice || '0x0',
+            nonce: parseInt(nonceStr),
+            hash: tx.hash || '',
+          });
+        }
+        for (const nonceStr of Object.keys(queued)) {
+          const tx = queued[nonceStr];
+          txs.push({
+            from: addr,
+            to: tx.to || '0x',
+            value: tx.value || '0x0',
+            gasPrice: tx.gasPrice || '0x0',
+            nonce: parseInt(nonceStr),
+            hash: tx.hash || '',
+          });
+        }
+      }
+      setPendingTxs(txs);
+      setError(null);
+      setLastRefresh(new Date());
+    } catch (e) {
+      setError('TxPool API is not enabled on this node. Pending transactions require the --txpool.api flag on the Geth node.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPending();
+    const interval = setInterval(fetchPending, 5000);
+    return () => clearInterval(interval);
+  }, [fetchPending]);
+
+  return (
+    <div className="space-y-6">
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+              <Clock className="w-5 h-5 text-[#13b5c1]" />
+              Pending Transactions
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <button onClick={fetchPending} className="flex items-center gap-1 text-xs text-[#13b5c1] hover:text-[#0fa3ae]">
+                <RefreshCw className="w-3 h-3" /> Refresh
+              </button>
+              <span className="text-xs text-gray-400">Auto-refresh every 5s · Last: {lastRefresh.toLocaleTimeString()}</span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <TableSkeleton rows={5} cols={6} />
+          ) : error ? (
+            <div className="text-center py-10 text-gray-400">
+              <AlertCircle className="w-10 h-10 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">{error}</p>
+            </div>
+          ) : pendingTxs.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">
+              <Clock className="w-10 h-10 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">No pending transactions in the mempool</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">From</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">To</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-right">Value</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-right">Gas Price</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">Nonce</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingTxs.map((tx, idx) => (
+                  <TableRow key={`${tx.from}-${tx.nonce}-${idx}`} className="text-sm">
+                    <TableCell>
+                      <button onClick={() => navigateTo(`#address/${tx.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        {shortHash(tx.from)}
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {tx.to && tx.to !== '0x' && tx.to !== '0x0000000000000000000000000000000000000000' ? (
+                        <button onClick={() => navigateTo(`#address/${tx.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                          {shortHash(tx.to)}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded border border-yellow-200">Contract Creation</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      {weiToExe(tx.value)} <span className="text-gray-400">{NATIVE_TOKEN}</span>
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      {weiToGwei(tx.gasPrice)} Gwei
+                    </TableCell>
+                    <TableCell className="text-center font-mono text-xs">{tx.nonce}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// VERIFIED CONTRACTS LIST PAGE
+// ============================================================================
+function VerifiedContractsPage() {
+  const [contracts, setContracts] = useState<VerifiedContractData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const stored = getVerifiedContracts();
+    const list = Object.values(stored);
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    setContracts(list);
+    setLoading(false);
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+            <ShieldCheck className="w-5 h-5 text-[#13b5c1]" />
+            Verified Contracts
+          </CardTitle>
+          <p className="text-xs text-gray-500 mt-1">All contracts with verified source code stored in your browser</p>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <TableSkeleton rows={5} cols={6} />
+          ) : contracts.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <ShieldCheck className="w-16 h-16 mx-auto mb-4 opacity-30" />
+              <p className="font-medium mb-1">No Verified Contracts</p>
+              <p className="text-sm">Contracts you verify will appear here</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase w-12">#</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Contract Name</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Address</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Compiler</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">Optimization</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Verified Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {contracts.map((c, idx) => (
+                  <TableRow key={c.address} className="text-sm hover:bg-gray-50/50">
+                    <TableCell className="text-gray-400 text-xs">{idx + 1}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Cuboid className="w-4 h-4 text-[#13b5c1] shrink-0" />
+                        <span className="font-medium text-gray-800">{c.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => navigateTo(`#address/${c.address}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                          {shortHash(c.address)}
+                        </button>
+                        <CopyButton text={c.address} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-gray-600">{c.compiler} {c.version}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge className={c.optimization > 0 ? 'bg-green-50 text-green-700 border-green-200 text-[10px]' : 'bg-gray-50 text-gray-600 border-gray-200 text-[10px]'}>
+                        {c.optimization > 0 ? `Yes (${c.optimization})` : 'No'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-gray-500">
+                      {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '--'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// BROADCAST TRANSACTION TOOL PAGE
+// ============================================================================
+function BroadcastTxnPage() {
+  const [rawTx, setRawTx] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null);
+
+  const handleBroadcast = async () => {
+    if (!rawTx.trim()) {
+      setResult({ success: false, message: 'Please enter a raw transaction hex.' });
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    try {
+      const hexInput = rawTx.trim().startsWith('0x') ? rawTx.trim() : `0x${rawTx.trim()}`;
+      const txHash = await rpcCall('eth_sendRawTransaction', [hexInput]) as string;
+      setResult({ success: true, message: 'Transaction broadcast successfully!', txHash });
+    } catch (e) {
+      setResult({ success: false, message: e instanceof Error ? e.message : 'Failed to broadcast transaction' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+            <Send className="w-5 h-5 text-[#13b5c1]" />
+            Broadcast Transaction
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-gray-500">Broadcast a signed raw transaction to the {CHAIN_NAME} network.</p>
+          <div className="space-y-2">
+            <Label htmlFor="raw-tx" className="text-sm font-medium text-gray-700">Raw Transaction Hex</Label>
+            <Textarea id="raw-tx" value={rawTx} onChange={(e) => setRawTx(e.target.value)}
+              placeholder="0x02f8... (signed transaction hex)"
+              className="text-sm font-mono min-h-[120px]" rows={6} />
+          </div>
+          <Button onClick={handleBroadcast} disabled={loading || !rawTx.trim()}
+            className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white px-8">
+            {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Broadcasting...</> : <><Send className="w-4 h-4 mr-2" />Broadcast Transaction</>}
+          </Button>
+          {result && (
+            <div className={`rounded-lg border p-4 ${result.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              <div className="flex items-start gap-2">
+                {result.success ? <Check className="w-5 h-5 text-green-500 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />}
+                <div>
+                  <p className="text-sm font-medium">{result.message}</p>
+                  {result.txHash && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-gray-500">TX Hash:</span>
+                      <button onClick={() => navigateTo(`#tx/${result.txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        {result.txHash}
+                      </button>
+                      <CopyButton text={result.txHash} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// UNIT CONVERTER TOOL PAGE
+// ============================================================================
+function UnitConverterPage() {
+  const [wei, setWei] = useState('');
+  const [gwei, setGwei] = useState('');
+  const [exe, setExe] = useState('');
+
+  const handleWeiChange = (val: string) => {
+    setWei(val);
+    if (val && !isNaN(Number(val))) {
+      const weiVal = BigInt(val);
+      setGwei((Number(weiVal) / 1e9).toString());
+      setExe(weiToExe(`0x${weiVal.toString(16)}`));
+    } else {
+      setGwei('');
+      setExe('');
+    }
+  };
+
+  const handleGweiChange = (val: string) => {
+    setGwei(val);
+    if (val && !isNaN(Number(val))) {
+      const weiVal = BigInt(Math.floor(Number(val) * 1e9));
+      setWei(weiVal.toString());
+      setExe(weiToExe(`0x${weiVal.toString(16)}`));
+    } else {
+      setWei('');
+      setExe('');
+    }
+  };
+
+  const handleExeChange = (val: string) => {
+    setExe(val);
+    if (val && !isNaN(Number(val))) {
+      const parts = val.split('.');
+      const intPart = BigInt(parts[0] || '0');
+      let fracWei = 0n;
+      if (parts[1]) {
+        const frac = parts[1].padEnd(18, '0').slice(0, 18);
+        fracWei = BigInt(frac);
+      }
+      const totalWei = intPart * 10n ** 18n + fracWei;
+      setWei(totalWei.toString());
+      setGwei((Number(totalWei) / 1e9).toString());
+    } else {
+      setWei('');
+      setGwei('');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+            <ArrowUpDown className="w-5 h-5 text-[#13b5c1]" />
+            Unit Converter
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <p className="text-sm text-gray-500">Convert between Wei, Gwei, and {NATIVE_TOKEN} units.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="space-y-2">
+              <Label htmlFor="wei-input" className="text-sm font-medium text-gray-700">Wei</Label>
+              <Input id="wei-input" type="text" value={wei} onChange={(e) => handleWeiChange(e.target.value)}
+                placeholder="1000000000000000000" className="font-mono text-sm" />
+              <span className="text-[10px] text-gray-400">Smallest unit of {NATIVE_TOKEN}</span>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="gwei-input" className="text-sm font-medium text-gray-700">Gwei</Label>
+              <Input id="gwei-input" type="text" value={gwei} onChange={(e) => handleGweiChange(e.target.value)}
+                placeholder="1000000000" className="font-mono text-sm" />
+              <span className="text-[10px] text-gray-400">Gigawei (1 Gwei = 10⁹ Wei)</span>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="exe-input" className="text-sm font-medium text-gray-700">{NATIVE_TOKEN}</Label>
+              <Input id="exe-input" type="text" value={exe} onChange={(e) => handleExeChange(e.target.value)}
+                placeholder="1.0" className="font-mono text-sm" />
+              <span className="text-[10px] text-gray-400">1 {NATIVE_TOKEN} = 10¹⁸ Wei</span>
+            </div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+            <h4 className="text-xs font-semibold text-gray-600 mb-2">Common Conversions</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono text-gray-500">
+              <div>1 Wei = 0.000000001 Gwei</div>
+              <div>1 Gwei = 1,000,000,000 Wei</div>
+              <div>1 {NATIVE_TOKEN} = 1,000,000,000 Gwei</div>
+              <div>1 {NATIVE_TOKEN} = 10¹⁸ Wei</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// BYTECODE TO OPCODE DISASSEMBLER PAGE
+// ============================================================================
+function BytecodeToOpcodePage() {
+  const [bytecode, setBytecode] = useState('');
+  const [output, setOutput] = useState<{ offset: number; opcode: string; operand: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDisassemble = () => {
+    setError(null);
+    if (!bytecode.trim()) {
+      setError('Please enter bytecode.');
+      return;
+    }
+    const hex = bytecode.trim();
+    if (!/^0x[0-9a-fA-F]*$/.test(hex)) {
+      setError('Invalid bytecode. Must be a hex string starting with 0x.');
+      return;
+    }
+    try {
+      const result = disassembleBytecode(hex);
+      setOutput(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Disassembly failed');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+            <Binary className="w-5 h-5 text-[#13b5c1]" />
+            Bytecode to Opcode Disassembler
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-gray-500">Disassemble EVM bytecode into human-readable opcodes.</p>
+          <div className="space-y-2">
+            <Label htmlFor="bytecode-input" className="text-sm font-medium text-gray-700">Bytecode (0x-prefixed)</Label>
+            <Textarea id="bytecode-input" value={bytecode} onChange={(e) => setBytecode(e.target.value)}
+              placeholder="0x6080604052..."
+              className="text-sm font-mono min-h-[100px]" rows={4} />
+          </div>
+          <Button onClick={handleDisassemble} disabled={!bytecode.trim()}
+            className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white px-8">
+            <Binary className="w-4 h-4 mr-2" />Disassemble
+          </Button>
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 text-sm">{error}</div>
+          )}
+          {output.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-500 font-medium">{output.length} opcodes</span>
+                <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => navigator.clipboard.writeText(output.map(l => `${l.offset.toString().padStart(6)} ${l.opcode.padEnd(20)} ${l.operand}`).join('\n'))}>
+                  <Copy className="w-3 h-3 mr-1" />Copy All
+                </Button>
+              </div>
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-[#1e1e2e] max-h-[500px] overflow-y-auto">
+                <pre className="p-4 text-sm font-mono leading-relaxed">
+                  <code>
+                    {output.map((line, idx) => (
+                      <div key={idx} className="flex gap-4">
+                        <span className="text-gray-500 select-none w-12 text-right shrink-0">{line.offset}</span>
+                        <span className={line.opcode.startsWith('PUSH') ? 'text-yellow-300' : line.opcode === 'JUMPDEST' ? 'text-green-400' : ['STOP', 'RETURN', 'REVERT', 'INVALID', 'SELFDESTRUCT'].includes(line.opcode) ? 'text-red-400' : 'text-cyan-300'}>
+                          {line.opcode}
+                        </span>
+                        {line.operand && <span className="text-gray-400">{line.operand.length > 40 ? line.operand.slice(0, 20) + '...' + line.operand.slice(-20) : line.operand}</span>}
+                      </div>
+                    ))}
+                  </code>
+                </pre>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Opcode Reference */}
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+            <BookOpen className="w-4 h-4 text-gray-500" />
+            Common EVM Opcodes Reference
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs font-mono">
+            {[
+              ['STOP', '0x00', 'Halts execution'],
+              ['ADD / SUB / MUL / DIV', '0x01-0x04', 'Arithmetic ops'],
+              ['LT / GT / EQ', '0x10-0x14', 'Comparison ops'],
+              ['AND / OR / XOR / NOT', '0x16-0x19', 'Bitwise ops'],
+              ['SHA3', '0x20', 'Keccak-256 hash'],
+              ['ADDRESS / CALLER', '0x30/0x33', 'Context info'],
+              ['CALLVALUE', '0x34', 'ETH value sent'],
+              ['PUSH1 - PUSH32', '0x60-0x7f', 'Push N bytes'],
+              ['DUP1 - DUP16', '0x80-0x8f', 'Duplicate stack'],
+              ['SWAP1 - SWAP16', '0x90-0x9f', 'Swap stack items'],
+              ['SLOAD / SSTORE', '0x54/0x55', 'Storage access'],
+              ['MLOAD / MSTORE', '0x51/0x52', 'Memory access'],
+              ['JUMP / JUMPI', '0x56/0x57', 'Control flow'],
+              ['JUMPDEST', '0x5b', 'Jump target'],
+              ['CALL', '0xf1', 'Message call'],
+              ['DELEGATECALL', '0xf4', 'Delegate call'],
+              ['STATICCALL', '0xfa', 'Static call'],
+              ['CREATE / CREATE2', '0xf0/0xf5', 'Contract creation'],
+              ['RETURN / REVERT', '0xf3/0xfd', 'Return output'],
+              ['SELFDESTRUCT', '0xff', 'Destroy contract'],
+              ['LOG0 - LOG4', '0xa0-0xa4', 'Event emission'],
+            ].map(([op, code, desc]) => (
+              <div key={op} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded border border-gray-100">
+                <span className="text-gray-600 w-36 truncate">{op}</span>
+                <span className="text-[#13b5c1]">{code}</span>
+                <span className="text-gray-400 hidden sm:inline">- {desc}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// NETWORK STATISTICS / CHARTS PAGE
+// ============================================================================
+function NetworkChartsPage() {
+  const [blockData, setBlockData] = useState<{ number: number; blockTime: number; gasUsed: number; gasLimit: number; txCount: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchChart = async () => {
+      try {
+        const latestHex = await rpcCall('eth_blockNumber');
+        const latestBlock = hexToNumber(latestHex);
+        const blocks: { number: number; blockTime: number; gasUsed: number; gasLimit: number; txCount: number }[] = [];
+        let prevTimestamp = 0;
+
+        for (let i = 0; i < 50; i++) {
+          const b = latestBlock - i;
+          if (b < 0) break;
+          try {
+            const block = await rpcCall('eth_getBlockByNumber', [`0x${b.toString(16)}`, false]);
+            if (block) {
+              const ts = hexToNumber(block.timestamp) * 1000;
+              blocks.push({
+                number: b,
+                blockTime: prevTimestamp > 0 ? Math.max(0, (ts - prevTimestamp) / 1000) : 0,
+                gasUsed: hexToNumber(block.gasUsed),
+                gasLimit: hexToNumber(block.gasLimit),
+                txCount: block.transactions.length,
+              });
+              prevTimestamp = ts;
+            }
+          } catch { /* skip */ }
+        }
+        blocks.reverse();
+        if (mounted) {
+          setBlockData(blocks);
+          setLoading(false);
+        }
+      } catch {
+        if (mounted) setLoading(false);
+      }
+    };
+    fetchChart();
+    return () => { mounted = false; };
+  }, []);
+
+  const chartData = blockData.map(b => ({
+    block: b.number,
+    blockTime: b.blockTime > 60 ? 0 : b.blockTime,
+    gasUsed: Math.round((b.gasUsed / b.gasLimit) * 100),
+    txCount: b.txCount,
+  }));
+
+  if (loading) return <div className="space-y-4"><CardSkeleton /><CardSkeleton /><CardSkeleton /></div>;
+
+  return (
+    <div className="space-y-6">
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+            <BarChart3 className="w-5 h-5 text-[#13b5c1]" />
+            Network Statistics
+          </CardTitle>
+          <p className="text-xs text-gray-500 mt-1">Data from the last 50 blocks on {CHAIN_NAME}</p>
+        </CardHeader>
+        <CardContent />
+      </Card>
+
+      {/* Block Time Distribution */}
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <Clock className="w-4 h-4 text-gray-500" />
+            Block Time Distribution (seconds)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="block" tick={{ fontSize: 10 }} tickFormatter={(v) => `#${v}`} />
+                <YAxis tick={{ fontSize: 10 }} label={{ value: 'seconds', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+                <RechartsTooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                  formatter={(value: number) => [`${value}s`, 'Block Time']}
+                  labelFormatter={(label) => `Block #${label}`}
+                />
+                <Bar dataKey="blockTime" fill="#13b5c1" radius={[2, 2, 0, 0]}>
+                  {chartData.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.blockTime > 10 ? '#ef4444' : entry.blockTime > 5 ? '#f59e0b' : '#13b5c1'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Gas Usage Trend */}
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <Fuel className="w-4 h-4 text-gray-500" />
+            Gas Usage Trend (% of Gas Limit)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="block" tick={{ fontSize: 10 }} tickFormatter={(v) => `#${v}`} />
+                <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} label={{ value: '%', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+                <RechartsTooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                  formatter={(value: number) => [`${value}%`, 'Gas Used']}
+                  labelFormatter={(label) => `Block #${label}`}
+                />
+                <Line type="monotone" dataKey="gasUsed" stroke="#13b5c1" strokeWidth={2} dot={{ fill: '#13b5c1', r: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Transaction Count per Block */}
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <FileText className="w-4 h-4 text-gray-500" />
+            Transactions per Block
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="block" tick={{ fontSize: 10 }} tickFormatter={(v) => `#${v}`} />
+                <YAxis tick={{ fontSize: 10 }} label={{ value: 'txns', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+                <RechartsTooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                  formatter={(value: number) => [`${value}`, 'Transactions']}
+                  labelFormatter={(label) => `Block #${label}`}
+                />
+                <Bar dataKey="txCount" fill="#0d9488" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// VALIDATORS PAGE
+// ============================================================================
+function ValidatorsPage() {
+  const [signers, setSigners] = useState<string[]>([]);
+  const [signerStats, setSignerStats] = useState<{ address: string; blocksProposed: number; isCurrentSigner: boolean }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchValidators = async () => {
+      try {
+        const signerList = await rpcCall('clique_getSigners') as string[];
+        if (!mounted) return;
+
+        if (!Array.isArray(signerList) || signerList.length === 0) {
+          setError('No validators found or clique_getSigners is not available on this node.');
+          setLoading(false);
+          return;
+        }
+
+        setSigners(signerList);
+
+        // Scan recent 100 blocks to count proposals
+        const latestHex = await rpcCall('eth_blockNumber');
+        const latestBlock = hexToNumber(latestHex);
+        const scanBlocks = Math.min(100, latestBlock);
+        const statsMap = new Map<string, number>();
+
+        for (let b = latestBlock; b >= latestBlock - scanBlocks && b >= 0; b--) {
+          try {
+            const block = await rpcCall('eth_getBlockByNumber', [`0x${b.toString(16)}`, false]);
+            if (block && block.miner) {
+              const key = block.miner.toLowerCase();
+              statsMap.set(key, (statsMap.get(key) || 0) + 1);
+            }
+          } catch { /* skip */ }
+        }
+
+        // Get current signer (latest block miner)
+        const latestBlockData = await rpcCall('eth_getBlockByNumber', [`0x${latestBlock.toString(16)}`, false]);
+        const currentSigner = latestBlockData?.miner?.toLowerCase() || '';
+
+        const stats = signerList.map(addr => ({
+          address: addr,
+          blocksProposed: statsMap.get(addr.toLowerCase()) || 0,
+          isCurrentSigner: addr.toLowerCase() === currentSigner,
+        }));
+
+        stats.sort((a, b) => b.blocksProposed - a.blocksProposed);
+
+        if (mounted) {
+          setSignerStats(stats);
+          setLoading(false);
+        }
+      } catch (e) {
+        if (mounted) {
+          setError('Failed to fetch validators. The clique_getSigners API may not be available.');
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchValidators();
+    return () => { mounted = false; };
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <Card className="border border-gray-200">
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
+              <Landmark className="w-5 h-5 text-[#13b5c1]" />
+              Validators (Signers)
+            </CardTitle>
+            <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
+              {signerStats.length} Validator{signerStats.length !== 1 ? 's' : ''}
+            </Badge>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Clique PoA validators on {CHAIN_NAME} · Block proposal stats from last 100 blocks</p>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <TableSkeleton rows={5} cols={4} />
+          ) : error ? (
+            <div className="text-center py-10 text-gray-400">
+              <Landmark className="w-10 h-10 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">{error}</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase w-12">#</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase">Signer Address</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">Status</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase text-center">Proposed Blocks</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {signerStats.map((v, idx) => (
+                  <TableRow key={v.address} className="text-sm hover:bg-gray-50/50">
+                    <TableCell className="text-gray-400 text-xs">{idx + 1}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0" style={{ background: getGradientFromAddress(v.address) }}>
+                          {idx + 1}
+                        </div>
+                        <button onClick={() => navigateTo(`#address/${v.address}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                          {shortHash(v.address, 14, 6)}
+                        </button>
+                        <CopyButton text={v.address} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {v.isCurrentSigner ? (
+                        <Badge className="bg-green-50 text-green-700 border-green-200 text-[10px]">
+                          <Zap className="w-3 h-3 mr-0.5" />Active
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-gray-50 text-gray-500 border-gray-200 text-[10px]">Standby</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="inline-flex items-center justify-center bg-gray-100 text-gray-700 text-xs rounded px-2 py-0.5 font-mono min-w-[40px]">
+                          {v.blocksProposed}
+                        </span>
+                        <Progress value={signerStats[0] ? (v.blocksProposed / signerStats[0].blocksProposed) * 100 : 0} className="h-2 w-20" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
 // FOOTER
 // ============================================================================
 function Footer() {
@@ -3592,7 +4905,14 @@ type ViewType =
   | { page: 'verify-contract'; prefillAddress?: string }
   | { page: 'tokens' }
   | { page: 'nfts' }
-  | { page: 'top-accounts' };
+  | { page: 'top-accounts' }
+  | { page: 'pending-txs' }
+  | { page: 'verified-contracts' }
+  | { page: 'broadcast-txn' }
+  | { page: 'unit-converter' }
+  | { page: 'bytecode-to-opcode' }
+  | { page: 'charts' }
+  | { page: 'validators' };
 
 function parseHash(hash: string): ViewType {
   if (!hash || hash === '#' || hash === '#home') return { page: 'home' };
@@ -3601,6 +4921,13 @@ function parseHash(hash: string): ViewType {
   if (hash === '#tokens') return { page: 'tokens' };
   if (hash === '#nfts') return { page: 'nfts' };
   if (hash === '#top-accounts') return { page: 'top-accounts' };
+  if (hash === '#pending-txs') return { page: 'pending-txs' };
+  if (hash === '#verified-contracts') return { page: 'verified-contracts' };
+  if (hash === '#broadcast-txn') return { page: 'broadcast-txn' };
+  if (hash === '#unit-converter') return { page: 'unit-converter' };
+  if (hash === '#bytecode-to-opcode') return { page: 'bytecode-to-opcode' };
+  if (hash === '#charts') return { page: 'charts' };
+  if (hash === '#validators') return { page: 'validators' };
   if (hash === '#verify-contract' || hash.startsWith('#verify-contract?')) {
     const addressMatch = hash.match(/[?&]address=(0x[a-fA-F0-9]+)/);
     return { page: 'verify-contract', prefillAddress: addressMatch ? addressMatch[1] : undefined };
@@ -3644,6 +4971,13 @@ export default function ExplorerApp() {
       case 'tokens': return `Tokens | ${CHAIN_NAME}`;
       case 'nfts': return `NFTs | ${CHAIN_NAME}`;
       case 'top-accounts': return `Top Accounts | ${CHAIN_NAME}`;
+      case 'pending-txs': return `Pending Transactions | ${CHAIN_NAME}`;
+      case 'verified-contracts': return `Verified Contracts | ${CHAIN_NAME}`;
+      case 'broadcast-txn': return `Broadcast TXN | ${CHAIN_NAME}`;
+      case 'unit-converter': return `Unit Converter | ${CHAIN_NAME}`;
+      case 'bytecode-to-opcode': return `Bytecode to Opcode | ${CHAIN_NAME}`;
+      case 'charts': return `Network Statistics | ${CHAIN_NAME}`;
+      case 'validators': return `Validators | ${CHAIN_NAME}`;
     }
   }, [view]);
 
@@ -3664,6 +4998,13 @@ export default function ExplorerApp() {
           {view.page === 'tokens' && <TokensTrackerPage />}
           {view.page === 'nfts' && <NFTCollectionsPage />}
           {view.page === 'top-accounts' && <TopAccountsPage />}
+          {view.page === 'pending-txs' && <PendingTransactionsPage />}
+          {view.page === 'verified-contracts' && <VerifiedContractsPage />}
+          {view.page === 'broadcast-txn' && <BroadcastTxnPage />}
+          {view.page === 'unit-converter' && <UnitConverterPage />}
+          {view.page === 'bytecode-to-opcode' && <BytecodeToOpcodePage />}
+          {view.page === 'charts' && <NetworkChartsPage />}
+          {view.page === 'validators' && <ValidatorsPage />}
         </main>
         <Footer />
       </TooltipProvider>
