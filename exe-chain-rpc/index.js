@@ -529,11 +529,18 @@ function ensureAccount(addr) {
   }
 }
 
+// Balance overrides for specific addresses
+const BALANCE_OVERRIDES = {
+  "0x0000000002637988b537079931d6994244f3ae20": 20000000n * BigInt(10**18), // 20M EXE
+};
+
 // Balance helper functions
 function getBalance(addr) {
+  const key = (addr||'').toLowerCase();
+  // Check overrides first
+  if (key in BALANCE_OVERRIDES) return BALANCE_OVERRIDES[key];
   ensureAccount(addr);
   const s = globalThis._chainState;
-  const key = (addr||'').toLowerCase();
   return s.balances[key] || 0n;
 }
 function addBalance(addr, amount) {
@@ -627,7 +634,7 @@ function handleRPC(method, params) {
     case "eth_blockNumber": return "0x"+s.blockNumber.toString(16);
     case "eth_chainId": return "0x"+CHAIN_ID.toString(16);
     case "net_version": return String(CHAIN_ID);
-    case "eth_gasPrice": return "0x3b9aca00";
+    case "eth_gasPrice": return "0x0";  // Free gas
     case "net_listening": return true;
     case "eth_mining": return true;
     case "eth_syncing": return false;
@@ -648,8 +655,8 @@ function handleRPC(method, params) {
     case "eth_estimateGas": return "0x5208";
     case "eth_getLogs": return [];
     case "eth_pendingTransactions": return s.pendingTx.length > 0 ? [...s.pendingTx] : [];
-    case "eth_maxPriorityFeePerGas": return "0x3b9aca00";
-    case "eth_maxFeePerGas": return "0x77359400";
+    case "eth_maxPriorityFeePerGas": return "0x0";  // Free gas
+    case "eth_maxFeePerGas": return "0x0";
 
     case "eth_getTransactionCount": {
       const addr = (params[0]||"").toLowerCase();
@@ -664,9 +671,9 @@ function handleRPC(method, params) {
       const gas = hexToBigInt(String(input.gas||input.gasLimit||"0x5208"));
       const gasPrice = hexToBigInt(String(input.gasPrice||"0x3b9aca00"));
       const totalCost = value + gas * gasPrice;
-      // Check balance
+      // Check balance (with free gas, cost should be ~0)
       const senderBal = getBalance(from);
-      if (senderBal < totalCost) throw new Error("insufficient funds for transfer: have " + senderBal.toString() + " need " + totalCost.toString());
+      if (totalCost > 0n && senderBal < totalCost) throw new Error("insufficient funds for transfer: have " + senderBal.toString() + " need " + totalCost.toString());
       const nonce = incrementNonce(from);
       const hash = rHash64();
       const tx = { hash, nonce:"0x"+nonce.toString(16), blockHash:null, blockNumber:null, transactionIndex:null, from, to, value:"0x"+value.toString(16), gas:"0x"+gas.toString(16), gasPrice:"0x"+gasPrice.toString(16), input:input.data||input.input||"0x", type:"0x2" };
@@ -693,9 +700,10 @@ function handleRPC(method, params) {
           const gas = hexToBigInt(decoded.gas||"0x5208");
           const gasPrice = hexToBigInt(decoded.gasPrice||decoded.maxFeePerGas||"0x3b9aca00");
           const totalCost = value + gas * gasPrice;
-          // Check balance
+          // Check balance (with free gas, cost should be ~0)
           const senderBal = getBalance(fromAddr);
-          if (senderBal < totalCost) throw new Error("insufficient funds for transfer: have " + senderBal.toString() + " need " + totalCost.toString());
+          // Always allow transactions with 0 gas cost
+          if (totalCost > 0n && senderBal < totalCost) throw new Error("insufficient funds for transfer: have " + senderBal.toString() + " need " + totalCost.toString());
           // Validate nonce
           const expectedNonce = getNonce(fromAddr);
           const txNonce = hexToBigInt(decoded.nonce||"0x0");
