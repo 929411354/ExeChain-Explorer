@@ -1,5 +1,5 @@
 name = "exe-chain-api"
-main = "index.js"
+main = "rpc-worker.js"
 compatibility_date = "2024-01-01"
 
 [[routes]]
