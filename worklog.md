@@ -144,3 +144,26 @@ Stage Summary:
 - 注入交易hash: 0xa56ada286be54c544b5c0d0bb46f0baf72f3dacce9de1fc5aab26eec091e55db
 - 交易: 从 0x0000000002637988B537079931d6994244F3ae20 转入 5 EXE
 - Worker已部署, RPC查询正常返回注入数据
+
+---
+Task ID: 5-7
+Agent: main
+Task: 修复交易不打包 + 发送真实EXE + 更新Worker
+
+Work Log:
+- 发现root cause: 之前eth_gasPrice通过Worker返回0，导致钱包发送交易时gasPrice=0 < baseFee(7 wei)，交易进pool但不被矿工打包
+- 矿工账户0x9abd的nonce 3用gasPrice=1 wei发送的tx阻塞了后续所有nonce(4,5)
+- 用gasPrice=0x7(>=baseFee)替换nonce 3，交易成功被打包(block #6776)
+- nonce 4(1 EXE)和nonce 5(0.1 EXE)随后也自动被打包
+- 额外发送0.2 EXE到测试钱包(block #6806)
+- 更新Worker: 移除假交易注入代码，修复eth_gasPrice不再返回0(返回真实baseFee)
+- 修复eth_feeHistory返回正确的baseFee(0x7)
+- 部署更新后的Worker
+
+Stage Summary:
+- 测试钱包真实余额: 1.3 EXE (Worker显示10 EXE因为MIN_BALANCE逻辑)
+- 4笔真实交易已上链:
+  - block 6776: 3笔 (0 EXE + 1 EXE + 0.1 EXE)
+  - block 6806: 1笔 (0.2 EXE)
+- gasPrice已修复，不再返回0
+- Worker已移除假交易注入
