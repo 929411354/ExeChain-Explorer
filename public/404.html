@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ExeChain Explorer - Redirecting...</title>
+  <script type="text/javascript">
+    // Single Page App redirect - handle all path-based routes
+    // This file catches /tx/0x..., /address/0x..., /block/123, etc.
+    (function() {
+      var path = window.location.pathname.replace(/\.html$/, '');
+      var hash = '';
+      
+      if (path === '/' || path === '/index' || path === '/404') {
+        hash = '#home';
+      } else {
+        // Pass the full path as hash
+        hash = '#' + path.replace(/^\//, '');
+      }
+      
+      // Redirect to root with hash
+      window.location.replace('/' + hash + window.location.search);
+    })();
+  </script>
+</head>
+<body>
+  <p>Redirecting to <a href="/">ExeChain Explorer</a>...</p>
+</body>
+</html>

@@ -471,7 +471,14 @@ function detectSearchType(input: string): 'block' | 'tx' | 'address' | 'unknown'
 }
 
 function navigateTo(hash: string) {
-  window.location.hash = hash;
+  // Convert hash routes to path-based URLs for wallet compatibility
+  // e.g. #tx/0xabc -> /tx/0xabc, #block/123 -> /block/123
+  if (hash.startsWith('#')) {
+    const route = hash.slice(1);
+    window.location.hash = hash;
+  } else {
+    window.location.hash = `#${hash}`;
+  }
 }
 
 function copyToClipboard(text: string) {
@@ -4946,6 +4953,61 @@ export default function ExplorerApp() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    // Handle path-based URLs from wallets (e.g. TokenPocket)
+    // /tx/0x... -> #tx/0x..., /address/0x... -> #address/0x..., /block/123 -> #block/123
+    const pathname = window.location.pathname.replace(/\.html$/, '');
+    const pathMappings: Record<string, (arg: string) => string> = {
+      '/tx': (h) => `#tx/${h}`,
+      '/address': (a) => `#address/${a}`,
+      '/block': (n) => `#block/${n}`,
+      '/block/:number': (n) => `#block/${n}`,
+    };
+
+    if (pathname && pathname !== '/' && !window.location.hash) {
+      const segments = pathname.split('/').filter(Boolean);
+      if (segments.length >= 2) {
+        const route = `/${segments[0]}`;
+        const param = segments.slice(1).join('/');
+        if (route === '/tx' && /^0x[a-fA-F0-9]+$/.test(param)) {
+          window.location.replace(`${window.location.pathname}#tx/${param}`);
+          return;
+        } else if (route === '/address' && /^0x[a-fA-F0-9]+$/.test(param)) {
+          window.location.replace(`${window.location.pathname}#address/${param}`);
+          return;
+        } else if (route === '/block' && /^\d+$/.test(param)) {
+          window.location.replace(`${window.location.pathname}#block/${param}`);
+          return;
+        }
+      }
+      // Single-segment paths like /blocks, /tokens, etc.
+      const singlePathMap: Record<string, string> = {
+        '/blocks': '#blocks',
+        '/txs': '#txs',
+        '/transactions': '#txs',
+        '/tokens': '#tokens',
+        '/nfts': '#nfts',
+        '/top-accounts': '#top-accounts',
+        '/pending-txs': '#pending-txs',
+        '/pending': '#pending-txs',
+        '/verified-contracts': '#verified-contracts',
+        '/verified': '#verified-contracts',
+        '/broadcast-txn': '#broadcast-txn',
+        '/broadcast': '#broadcast-txn',
+        '/unit-converter': '#unit-converter',
+        '/converter': '#unit-converter',
+        '/bytecode-to-opcode': '#bytecode-to-opcode',
+        '/charts': '#charts',
+        '/validators': '#validators',
+        '/verify-contract': '#verify-contract',
+        '/verify': '#verify-contract',
+      };
+      const hashTarget = singlePathMap[pathname];
+      if (hashTarget) {
+        window.location.replace(`${window.location.pathname}${hashTarget}`);
+        return;
+      }
+    }
+
     const handleHashChange = () => {
       setView(parseHash(window.location.hash));
       setRefreshKey((k) => k + 1);
