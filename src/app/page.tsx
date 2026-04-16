@@ -230,14 +230,21 @@ function disassembleBytecode(bytecode: string): { offset: number; opcode: string
 // RPC UTILITIES
 // ============================================================================
 async function rpcCall(method: string, params: unknown[] = []) {
-  const res = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() + Math.random() }),
-  });
-  const json = await res.json();
-  if (json.error) throw new Error(json.error.message || 'RPC Error');
-  return json.result;
+  try {
+    const res = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() + Math.random() }),
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text || text[0] !== '{') return null;
+    const json = JSON.parse(text);
+    if (json.error) return null;
+    return json.result;
+  } catch {
+    return null;
+  }
 }
 
 function hexToNumber(hex: string): number {
@@ -391,7 +398,8 @@ async function loadSolc(version: string): Promise<(input: string) => string> {
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
-function weiToExe(wei: bigint | string): string {
+function weiToExe(wei: bigint | string | null | undefined): string {
+  if (wei === null || wei === undefined || wei === '0x' || wei === '0x0') return '0';
   const value = typeof wei === 'string' ? BigInt(wei) : wei;
   const divisor = 10n ** 18n;
   const integerPart = value / divisor;
@@ -978,7 +986,7 @@ async function fetchBlocksRange(startBlock: number, count: number): Promise<Bloc
       hash: b.hash,
       timestamp: hexToNumber(b.timestamp) * 1000,
       miner: b.miner,
-      txCount: b.transactions.length,
+      txCount: b.transactions ? b.transactions.length : 0,
       gasUsed: hexToNumber(b.gasUsed),
       gasLimit: hexToNumber(b.gasLimit),
       size: hexToNumber(b.size),
@@ -1002,7 +1010,7 @@ function buildTxRow(
 ): TxRow {
   const gasUsed = receipt ? hexToNumber(receipt.gasUsed) : 0;
   const gasPrice = tx.gasPrice || receipt?.effectiveGasPrice || '0x0';
-  const feeWei = BigInt(gasPrice) * BigInt(gasUsed);
+  const feeWei = BigInt(gasPrice || '0x0') * BigInt(gasUsed || 0);
   const status: 'success' | 'failed' =
     receipt && receipt.status === '0x1' ? 'success' : receipt ? 'failed' : 'success';
 
@@ -1962,7 +1970,7 @@ function BlockDetailPage({ blockNumber }: { blockNumber: number }) {
     let mounted = true;
     setLoadingTxs(true);
 
-    const txHashes = block.transactions;
+    const txHashes = block.transactions || [];
     if (txHashes.length === 0) {
       setTransactions([]);
       setLoadingTxs(false);
@@ -2024,7 +2032,7 @@ function BlockDetailPage({ blockNumber }: { blockNumber: number }) {
     { label: 'Block Number', value: block.number, mono: true },
     { label: 'Block Hash', value: block.hash, mono: true, copyable: true },
     { label: 'Timestamp', value: `${dateStr} (${timeAgo(timestamp)})`, mono: false },
-    { label: 'Transactions', value: `${block.transactions.length} transactions in this block`, mono: false },
+    { label: 'Transactions', value: `${(block.transactions || []).length} transactions in this block`, mono: false },
     { label: 'Signer / Miner', value: block.miner, mono: true, address: true, copyable: true },
     { label: 'Gas Used', value: `${gasUsed.toLocaleString()} (${((gasUsed / gasLimit) * 100).toFixed(1)}%)`, mono: true },
     { label: 'Gas Limit', value: gasLimit.toLocaleString(), mono: true },
@@ -2089,7 +2097,7 @@ function BlockDetailPage({ blockNumber }: { blockNumber: number }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
             <span className="w-1 h-5 bg-[#13b5c1] rounded-full" />
-            Transactions ({block.transactions.length})
+            Transactions ({(block.transactions || []).length})
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -2208,7 +2216,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
 
   const gasUsed = receipt ? hexToNumber(receipt.gasUsed) : 0;
   const gasPrice = tx.gasPrice || receipt?.effectiveGasPrice || '0x0';
-  const feeWei = BigInt(gasPrice) * BigInt(gasUsed);
+  const feeWei = BigInt(gasPrice || '0x0') * BigInt(gasUsed || 0);
   const status = receipt && receipt.status === '0x1' ? 'success' : receipt ? 'failed' : 'success';
   const timestamp = blockTimestamp;
   const isContractCreation = !tx.to;
@@ -2932,7 +2940,7 @@ function AddressDetailPage({ address }: { address: string }) {
 
     fetchAddressTxs().then((data) => {
       if (mounted) { setTransactions(data); setLoadingTxs(false); }
-    });
+    }).catch(() => { if (mounted) setLoadingTxs(false); });
     return () => { mounted = false; };
   }, [address, txCount, page]);
 
@@ -4581,7 +4589,7 @@ function NetworkChartsPage() {
                 blockTime: prevTimestamp > 0 ? Math.max(0, (ts - prevTimestamp) / 1000) : 0,
                 gasUsed: hexToNumber(block.gasUsed),
                 gasLimit: hexToNumber(block.gasLimit),
-                txCount: block.transactions.length,
+                txCount: (block.transactions || []).length,
               });
               prevTimestamp = ts;
             }
