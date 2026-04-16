@@ -107,7 +107,6 @@ const KNOWN_EVENTS: Record<string, string> = {
   '0x5c975abb2ef2272708b0c9ee82187b1d34b56bb8ee085081782564b4b6b9ee6ac': 'Unpaused',
 };
 
-
 // EVM Opcode lookup table
 const EVM_OPCODES: Record<number, { name: string; pushSize?: number; input: number; output: number }> = {
   0x00: { name: 'STOP', input: 0, output: 0 },
@@ -226,7 +225,6 @@ function disassembleBytecode(bytecode: string): { offset: number; opcode: string
   }
   return result;
 }
-
 
 // ============================================================================
 // RPC UTILITIES
@@ -470,16 +468,6 @@ function detectSearchType(input: string): 'block' | 'tx' | 'address' | 'unknown'
   return 'unknown';
 }
 
-function navigateTo(hash: string) {
-  // Convert hash routes to path-based URLs for wallet compatibility
-  // e.g. #tx/0xabc -> /tx/0xabc, #block/123 -> /block/123
-  if (hash.startsWith('#')) {
-    const route = hash.slice(1);
-    window.location.hash = hash;
-  } else {
-    window.location.hash = `#${hash}`;
-  }
-}
 
 function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text).catch(() => { /* ignore */ });
@@ -496,7 +484,6 @@ function getGradientFromAddress(address: string): string {
   const h2 = (h1 + 40) % 360;
   return `linear-gradient(135deg, hsl(${h1}, 70%, 55%), hsl(${h2}, 80%, 45%))`;
 }
-
 
 // ============================================================================
 // TOKEN / NFT DETECTION FUNCTIONS
@@ -668,7 +655,6 @@ function decodeInputData(input: string, abi: unknown): { method: string; params:
 
   return { method: methodName, params };
 }
-
 
 // ============================================================================
 // TYPES
@@ -974,7 +960,6 @@ function useAddress(address: string | null) {
   return { balance, txCount, loading, error };
 }
 
-
 // ============================================================================
 // BATCH BLOCKS FETCHER
 // ============================================================================
@@ -1120,7 +1105,6 @@ function TokenLogo({ symbol, address, size = 24 }: { symbol: string; address: st
     </div>
   );
 }
-
 
 // ============================================================================
 // NAVBAR
@@ -1305,7 +1289,6 @@ function Navbar({ onNavigate }: { onNavigate: (hash: string) => void }) {
   );
 }
 
-
 // ============================================================================
 // GAS TRACKER COMPONENT
 // ============================================================================
@@ -1482,7 +1465,7 @@ function BlocksTable({
             <TableCell className="font-mono font-medium">
               {compact ? (
                 <button
-                  onClick={() => navigateTo(`#block/${block.number}`)}
+                  onClick={() => (window.location.hash = `#block/${block.number}`)}
                   className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline"
                 >
                   {block.number.toLocaleString()}
@@ -1491,7 +1474,7 @@ function BlocksTable({
                 <div className="flex items-center gap-2">
                   <Blocks className="w-4 h-4 text-gray-400 shrink-0" />
                   <button
-                    onClick={() => navigateTo(`#block/${block.number}`)}
+                    onClick={() => (window.location.hash = `#block/${block.number}`)}
                     className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-semibold"
                   >
                     {block.number.toLocaleString()}
@@ -1504,7 +1487,7 @@ function BlocksTable({
             </TableCell>
             <TableCell className="text-center">
               <button
-                onClick={() => navigateTo(`#block/${block.number}`)}
+                onClick={() => (window.location.hash = `#block/${block.number}`)}
                 className="inline-flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded px-2 py-0.5 font-mono transition-colors"
               >
                 {block.txCount}
@@ -1514,7 +1497,7 @@ function BlocksTable({
             <TableCell>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => navigateTo(`#address/${block.miner}`)}
+                  onClick={() => (window.location.hash = `#address/${block.miner}`)}
                   className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline"
                 >
                   {shortHash(block.miner)}
@@ -1608,7 +1591,7 @@ function TransactionsTable({
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
                 )}
                 <button
-                  onClick={() => navigateTo(`#tx/${tx.hash}`)}
+                  onClick={() => (window.location.hash = `#tx/${tx.hash}`)}
                   className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline"
                 >
                   {shortHash(tx.hash)}
@@ -1623,7 +1606,7 @@ function TransactionsTable({
             </TableCell>
             <TableCell>
               <button
-                onClick={() => navigateTo(`#block/${tx.blockNumber}`)}
+                onClick={() => (window.location.hash = `#block/${tx.blockNumber}`)}
                 className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline"
               >
                 {tx.blockNumber.toLocaleString()}
@@ -1635,7 +1618,7 @@ function TransactionsTable({
             <TableCell>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => navigateTo(`#address/${tx.from}`)}
+                  onClick={() => (window.location.hash = `#address/${tx.from}`)}
                   className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline"
                 >
                   {shortHash(tx.from)}
@@ -1647,7 +1630,7 @@ function TransactionsTable({
               <div className="flex items-center justify-center gap-1">
                 {tx.to ? (
                   <button
-                    onClick={() => navigateTo(`#address/${tx.to}`)}
+                    onClick={() => (window.location.hash = `#address/${tx.to}`)}
                     className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline"
                   >
                     {shortHash(tx.to)}
@@ -1756,7 +1739,6 @@ function SimplePagination({
     </Pagination>
   );
 }
-
 
 // ============================================================================
 // HOME PAGE
@@ -2078,14 +2060,14 @@ function BlockDetailPage({ blockNumber }: { blockNumber: number }) {
                 <span className={`text-sm ${item.mono ? 'font-mono' : ''} break-all`}>
                   {item.address ? (
                     <button
-                      onClick={() => navigateTo(`#address/${item.value}`)}
+                      onClick={() => (window.location.hash = `#address/${item.value}`)}
                       className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline text-xs"
                     >
                       {item.value}
                     </button>
                   ) : item.blockHash ? (
                     <button
-                      onClick={() => navigateTo(`#block/${hexToNumber(item.value)}`)}
+                      onClick={() => (window.location.hash = `#block/${hexToNumber(item.value)}`)}
                       className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline text-xs"
                     >
                       {item.value}
@@ -2275,7 +2257,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
     {
       label: 'Block',
       value: tx.blockNumber ? (
-        <button onClick={() => navigateTo(`#block/${hexToNumber(tx.blockNumber)}`)}
+        <button onClick={() => (window.location.hash = `#block/${hexToNumber(tx.blockNumber)}`)}
           className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">
           {hexToNumber(tx.blockNumber).toLocaleString()}
         </button>
@@ -2289,7 +2271,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
       label: 'From',
       value: (
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={() => navigateTo(`#address/${tx.from}`)}
+          <button onClick={() => (window.location.hash = `#address/${tx.from}`)}
             className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">{tx.from}</button>
           <CopyButton text={tx.from} />
         </div>
@@ -2301,7 +2283,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
         <span className="text-[11px] bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded border border-yellow-200">Contract Creation</span>
       ) : tx.to ? (
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={() => navigateTo(`#address/${tx.to}`)}
+          <button onClick={() => (window.location.hash = `#address/${tx.to}`)}
             className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">{tx.to}</button>
           <CopyButton text={tx.to || ''} />
           {knownTokens[tx.to.toLowerCase()] && (
@@ -2391,7 +2373,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
                     <span className="text-xs text-gray-500 font-medium shrink-0 w-32">{param.name}</span>
                     <span className="text-xs text-gray-400 font-mono shrink-0 w-16">{param.type}</span>
                     {param.type === 'address' ? (
-                      <button onClick={() => navigateTo(`#address/${param.value}`)}
+                      <button onClick={() => (window.location.hash = `#address/${param.value}`)}
                         className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs">
                         {param.value}
                       </button>
@@ -2447,7 +2429,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
                     <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-[11px]">
                       {evt.name}
                     </Badge>
-                    <button onClick={() => navigateTo(`#address/${evt.contract}`)}
+                    <button onClick={() => (window.location.hash = `#address/${evt.contract}`)}
                       className="font-mono text-[11px] text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                       {shortHash(evt.contract)}
                     </button>
@@ -2462,7 +2444,7 @@ function TransactionDetailPage({ txHash }: { txHash: string }) {
                       <div key={pi} className="flex items-center gap-2 text-xs">
                         <span className="text-gray-500 font-medium w-16 shrink-0">{param.name}</span>
                         {param.type === 'address' ? (
-                          <button onClick={() => navigateTo(`#address/${param.value}`)}
+                          <button onClick={() => (window.location.hash = `#address/${param.value}`)}
                             className="font-mono text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                             {shortHash(param.value)}
                           </button>
@@ -2522,7 +2504,7 @@ function TokenInfoCard({ token }: { token: TokenInfo }) {
               <div>
                 <span className="text-[10px] text-gray-500 uppercase font-medium">Contract</span>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => navigateTo(`#address/${token.address}`)}
+                  <button onClick={() => (window.location.hash = `#address/${token.address}`)}
                     className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline font-mono text-xs truncate">
                     {shortHash(token.address)}
                   </button>
@@ -2599,7 +2581,7 @@ function TokenHoldingsTab({ address }: { address: string }) {
             <TableCell>
               <div className="flex items-center gap-2">
                 <TokenLogo symbol={t.symbol} address={t.address} size={24} />
-                <button onClick={() => navigateTo(`#address/${t.address}`)}
+                <button onClick={() => (window.location.hash = `#address/${t.address}`)}
                   className="text-[#13b5c1] hover:text-[#0fa3ae] hover:underline text-xs truncate max-w-[200px]">
                   {t.name}
                 </button>
@@ -3181,7 +3163,7 @@ function AddressDetailPage({ address }: { address: string }) {
                   </div>
                   <p className="text-gray-500 mb-1 font-medium">Contract Source Code Not Verified</p>
                   <p className="text-sm text-gray-400 mb-5">Are you the contract creator? Verify and publish your source code to make it publicly available.</p>
-                  <Button onClick={() => navigateTo(`#verify-contract?address=${address}`)}
+                  <Button onClick={() => (window.location.hash = `#verify-contract?address=${address}`)}
                     className="bg-[#13b5c1] hover:bg-[#0fa3ae] text-white">
                     <ShieldCheck className="w-4 h-4 mr-2" />Verify & Publish Source Code
                   </Button>
@@ -3313,7 +3295,7 @@ function TokensTrackerPage() {
                     <TableCell className="text-right font-mono text-xs">{formatTokenBalance(t.totalSupply, t.decimals)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => navigateTo(`#address/${t.address}`)}
+                        <button onClick={() => (window.location.hash = `#address/${t.address}`)}
                           className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                           {shortHash(t.address)}
                         </button>
@@ -3372,7 +3354,7 @@ function NFTCollectionsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {nfts.map((nft) => (
                 <Card key={nft.address} className="border border-gray-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => navigateTo(`#address/${nft.address}`)}>
+                  onClick={() => (window.location.hash = `#address/${nft.address}`)}>
                   <div className="h-36 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center relative">
                     <TokenLogo symbol={nft.symbol} address={nft.address} size={64} />
                     <Badge className="absolute top-2 right-2 bg-purple-50 text-purple-700 border-purple-200 text-[10px]">ERC-721</Badge>
@@ -3520,7 +3502,7 @@ function TopAccountsPage() {
                         <div className="flex items-center gap-2">
                           {tokenInfo && <TokenLogo symbol={tokenInfo.symbol} address={acc.address} size={20} />}
                           {acc.isContract && !tokenInfo && <Cuboid className="w-4 h-4 text-gray-400 shrink-0" />}
-                          <button onClick={() => navigateTo(`#address/${acc.address}`)}
+                          <button onClick={() => (window.location.hash = `#address/${acc.address}`)}
                             className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                             {shortHash(acc.address)}
                           </button>
@@ -3867,28 +3849,28 @@ function InternalTransactionsCard({ txHash, blockNumber }: { txHash: string; blo
                   <TableCell className="text-gray-400 text-xs">{idx + 1}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => navigateTo(`#tx/${txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                      <button onClick={() => (window.location.hash = `#tx/${txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                         {shortHash(txHash)}
                       </button>
                     </div>
                   </TableCell>
                   <TableCell>
                     {blockNumber !== null ? (
-                      <button onClick={() => navigateTo(`#block/${blockNumber}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                      <button onClick={() => (window.location.hash = `#block/${blockNumber}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                         {blockNumber.toLocaleString()}
                       </button>
                     ) : '--'}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => navigateTo(`#address/${trace.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                      <button onClick={() => (window.location.hash = `#address/${trace.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                         {shortHash(trace.from)}
                       </button>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => navigateTo(`#address/${trace.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                      <button onClick={() => (window.location.hash = `#address/${trace.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                         {shortHash(trace.to)}
                       </button>
                     </div>
@@ -4016,7 +3998,7 @@ function TokenTransfersTab({ tokenAddress, decimals, symbol }: { tokenAddress: s
           {transfers.map((t, idx) => (
             <TableRow key={`${t.txHash}-${idx}`} className="text-sm">
               <TableCell>
-                <button onClick={() => navigateTo(`#tx/${t.txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                <button onClick={() => (window.location.hash = `#tx/${t.txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                   {shortHash(t.txHash)}
                 </button>
               </TableCell>
@@ -4025,13 +4007,13 @@ function TokenTransfersTab({ tokenAddress, decimals, symbol }: { tokenAddress: s
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => navigateTo(`#address/${t.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                  <button onClick={() => (window.location.hash = `#address/${t.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                     {shortHash(t.from)}
                   </button>
                 </div>
               </TableCell>
               <TableCell className="text-center">
-                <button onClick={() => navigateTo(`#address/${t.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                <button onClick={() => (window.location.hash = `#address/${t.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                   {shortHash(t.to)}
                 </button>
               </TableCell>
@@ -4157,13 +4139,13 @@ function PendingTransactionsPage() {
                 {pendingTxs.map((tx, idx) => (
                   <TableRow key={`${tx.from}-${tx.nonce}-${idx}`} className="text-sm">
                     <TableCell>
-                      <button onClick={() => navigateTo(`#address/${tx.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                      <button onClick={() => (window.location.hash = `#address/${tx.from}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                         {shortHash(tx.from)}
                       </button>
                     </TableCell>
                     <TableCell className="text-center">
                       {tx.to && tx.to !== '0x' && tx.to !== '0x0000000000000000000000000000000000000000' ? (
-                        <button onClick={() => navigateTo(`#address/${tx.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        <button onClick={() => (window.location.hash = `#address/${tx.to}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                           {shortHash(tx.to)}
                         </button>
                       ) : (
@@ -4247,7 +4229,7 @@ function VerifiedContractsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => navigateTo(`#address/${c.address}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        <button onClick={() => (window.location.hash = `#address/${c.address}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                           {shortHash(c.address)}
                         </button>
                         <CopyButton text={c.address} />
@@ -4330,7 +4312,7 @@ function BroadcastTxnPage() {
                   {result.txHash && (
                     <div className="mt-2 flex items-center gap-2">
                       <span className="text-xs text-gray-500">TX Hash:</span>
-                      <button onClick={() => navigateTo(`#tx/${result.txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                      <button onClick={() => (window.location.hash = `#tx/${result.txHash}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                         {result.txHash}
                       </button>
                       <CopyButton text={result.txHash} />
@@ -4840,7 +4822,7 @@ function ValidatorsPage() {
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0" style={{ background: getGradientFromAddress(v.address) }}>
                           {idx + 1}
                         </div>
-                        <button onClick={() => navigateTo(`#address/${v.address}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
+                        <button onClick={() => (window.location.hash = `#address/${v.address}`)} className="font-mono text-xs text-[#13b5c1] hover:text-[#0fa3ae] hover:underline">
                           {shortHash(v.address, 14, 6)}
                         </button>
                         <CopyButton text={v.address} />
